@@ -58,6 +58,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<DeviceRefreshToken> DeviceRefreshTokens => Set<DeviceRefreshToken>();
 
+    public DbSet<TenantChangeLogEntry> TenantChangeLog => Set<TenantChangeLogEntry>();
+    public DbSet<SyncConflictAudit> SyncConflictAudits => Set<SyncConflictAudit>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
@@ -170,6 +173,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
         {
             e.Property(t => t.TokenHash).HasMaxLength(100);
             e.HasIndex(t => t.TokenHash).IsUnique();
+        });
+
+        builder.Entity<TenantChangeLogEntry>(e =>
+        {
+            e.Property(c => c.Id).ValueGeneratedOnAdd();
+            e.Property(c => c.EntityType).HasMaxLength(60);
+            e.HasIndex(c => new { c.TenantId, c.Id });
+        });
+
+        builder.Entity<SyncConflictAudit>(e =>
+        {
+            e.Property(a => a.EntityType).HasMaxLength(60);
+            e.HasIndex(a => new { a.TenantId, a.EntityId });
         });
 
         ApplyTenantConventions(builder);

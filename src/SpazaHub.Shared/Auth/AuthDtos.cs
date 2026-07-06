@@ -22,7 +22,8 @@ public sealed record AuthTokensResponse(
     string? RefreshToken,
     Guid TenantId,
     string Role,
-    Guid? CashierId);
+    Guid? CashierId,
+    Guid DeviceId);
 
 /// <summary>Owner creates a cashier sub-user with a 4-digit PIN.</summary>
 public sealed record CreateCashierRequest(string Name, string Pin, bool CanDoCashback);

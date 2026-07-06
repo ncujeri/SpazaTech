@@ -6,7 +6,7 @@ namespace SpazaHub.Domain.Entities;
 /// Prepaid float balance for the tenant, shared by VAS float and SMS credits.
 /// Balance changes are recorded as WalletMovement rows; Balance is a cached sum.
 /// </summary>
-public class TenantWallet : Entity, ITenantOwned
+public class TenantWallet : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 

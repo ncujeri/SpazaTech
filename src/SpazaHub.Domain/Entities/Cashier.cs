@@ -6,7 +6,7 @@ namespace SpazaHub.Domain.Entities;
 /// A sub-user of the shop who rings up sales. Logs in on a registered device with a
 /// 4-digit PIN. Never sees cost prices, margins, or reports.
 /// </summary>
-public class Cashier : Entity, ITenantOwned
+public class Cashier : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 
@@ -26,4 +26,6 @@ public class Cashier : Entity, ITenantOwned
     public DateTime? LockedOutUntilUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }
+
+    public DateTime UpdatedAtUtc { get; set; }
 }

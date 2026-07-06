@@ -6,7 +6,7 @@ namespace SpazaHub.Domain.Entities;
 /// Makhulu Book customer. Phone is optional by design: many credit customers are known
 /// by name or nickname only. POPIA: consent flags are captured explicitly.
 /// </summary>
-public class Customer : Entity, ITenantOwned
+public class Customer : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 

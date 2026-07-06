@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SpazaHub.Application.Common.Interfaces;
+using SpazaHub.Application.Sync;
 using SpazaHub.Infrastructure.Auth;
 using SpazaHub.Infrastructure.Identity;
 using SpazaHub.Infrastructure.Messaging;
 using SpazaHub.Infrastructure.Persistence;
+using SpazaHub.Infrastructure.Sync;
 
 namespace SpazaHub.Infrastructure;
 
@@ -30,12 +32,17 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
 
         services.AddScoped<TenantStampInterceptor>();
+        services.AddScoped<ChangeLogInterceptor>();
+        services.AddScoped<ISyncDeviceContext, SyncDeviceContext>();
 
         string provider = configuration["Database:Provider"] ?? "SqlServer";
 
         services.AddDbContext<AppDbContext>((sp, options) =>
         {
-            options.AddInterceptors(sp.GetRequiredService<TenantStampInterceptor>());
+            // Order matters: TenantId is stamped before the change log snapshots payloads.
+            options.AddInterceptors(
+                sp.GetRequiredService<TenantStampInterceptor>(),
+                sp.GetRequiredService<ChangeLogInterceptor>());
 
             if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
             {
@@ -60,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IMessagingProvider, DevLogSmsProvider>();
+        services.AddScoped<ISyncService, SyncService>();
 
         return services;
     }

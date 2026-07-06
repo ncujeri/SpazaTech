@@ -76,5 +76,6 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" })).WithTags("Health"
 
 app.MapAuthEndpoints();
 app.MapCashierEndpoints();
+app.MapSyncEndpoints();
 
 app.Run();

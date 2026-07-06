@@ -64,10 +64,28 @@ Then walk the auth flow (Swagger UI is at `/swagger`):
 
 No real connection strings or keys are committed. `appsettings.json` holds placeholders; use `dotnet user-secrets` locally and Azure Key Vault in production for `ConnectionStrings:SqlServer` and `Jwt:SigningKey`. The key in `appsettings.Development.json` is a dev-only constant for the SQLite demo.
 
+## Phase 2: Sync engine (complete)
+
+What was built:
+
+- **Sync contracts** (`SpazaHub.Shared/Sync`): push and pull envelopes, plus `SyncJson`, the single JSON contract used on both sides. It generically strips three things from every payload: `TenantId` (the server stamps tenancy from the JWT, never from payloads), `CachedQuantity` (stock on hand is derived from movements and never transmitted as truth), and child entity collections (children sync as their own items).
+- **Entity registry** (`SyncEntityRegistry`): the whitelist of syncable types, each marked append-only (dedupe on Id, immutable) or mutable last-write-wins (`IMutableSynced.UpdatedAtUtc` is the LWW timestamp). `TenantWallet` syncs down but can never be pushed (server-authoritative money).
+- **Server change log**: every applied write to a registered entity, whether it came from a device push or a server-side handler, appends a `TenantChangeLogEntry` through one `SaveChanges` interceptor. The bigint identity Id is the per-tenant monotonic pull cursor.
+- **Idempotent push** (`POST /api/sync/push`): ordered device batches applied in one transaction. Append-only replays dedupe on entity Id; mutable replays at the same timestamp are duplicates, not conflicts. Stale mutable edits lose LWW and land in `SyncConflictAudit` with the losing payload; winning edits audit the overwritten server values. Nothing is silently discarded. Pushing an Id that collides with another tenant's row is refused without confirming existence.
+- **Cursor pull** (`GET /api/sync/pull`): pages of changes since the client cursor, resumable at any point, with echo suppression (a device never receives its own changes back).
+- **Client plumbing** (`SpazaHub.Client`): local EF Core SQLite database sharing the server entity model, a `SyncOutbox` written in the same transaction as every local write, a `LocalStore` that applies pulled changes without touching the outbox (no echo loops) and recomputes `CachedQuantity` from local stock movements, and a `BackgroundSyncService` loop that drains the outbox in ordered chunks of 200 and pulls to the head of the change log, treating connectivity as an occasional bonus.
+- **OPFS persistence**: the SQLite file lives in the in-memory emscripten file system and is copied to the Origin Private File System after commits, restored on boot (`wwwroot/js/opfs-db.js`). When OPFS is unavailable the app still runs, but local data does not survive a reload.
+
+Test coverage: 85 passing tests. The sync suite covers duplicate batch replay (lost ack), out-of-order arrival within a batch, conflicting price edits from two devices, LWW winner and loser audits, cursor paging and crash-replay, echo suppression, tenant isolation of the change log, TenantId and CachedQuantity spoof attempts, the week-offline chunked backlog, and a full client-to-server-to-client round trip using the real `LocalStore` on both ends.
+
+### Known risk: SQLite-WASM runtime and OPFS (flagged per spec)
+
+Browser-side SQLite needs the `wasm-tools` workload (now installed in CI) and native relinking at publish. OPFS `createWritable` is solid on Chromium (the target Android fleet) but not on Safari. If real-device testing shows instability, the proposed fallback is IndexedDB persistence of the same database file bytes behind the existing `OpfsDbPersistence` seam, which is a one-class swap. No switch will be made without approval.
+
 ## Roadmap
 
 1. Foundation (done)
-2. Sync engine: client SQLite, outbox, idempotent push, cursor pull, LWW conflict audit
+2. Sync engine (done)
 3. POS + Inventory
 4. Cash-Up + Cashback
 5. Makhulu Book (customer credit ledger)

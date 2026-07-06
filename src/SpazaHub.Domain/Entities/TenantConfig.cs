@@ -7,7 +7,7 @@ namespace SpazaHub.Domain.Entities;
 /// Owner-configurable settings for one shop. Mutable reference data: syncs with
 /// last-write-wins and a server-side audit of overwritten values.
 /// </summary>
-public class TenantConfig : Entity, ITenantOwned
+public class TenantConfig : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 

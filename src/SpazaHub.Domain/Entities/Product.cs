@@ -7,7 +7,7 @@ namespace SpazaHub.Domain.Entities;
 /// derived from StockMovement rows; CachedQuantity is a local convenience only and is
 /// never transmitted as truth.
 /// </summary>
-public class Product : Entity, ITenantOwned
+public class Product : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 

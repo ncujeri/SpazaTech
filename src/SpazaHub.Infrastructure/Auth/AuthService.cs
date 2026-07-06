@@ -146,7 +146,8 @@ public class AuthService : IAuthService
         await _db.SaveChangesAsync(cancellationToken);
 
         var (accessToken, expiresIn) = _tokens.CreateOwnerToken(user.Id, user.TenantId);
-        return new AuthTokensResponse(accessToken, expiresIn, refreshToken, user.TenantId, Roles.Owner, null);
+        return new AuthTokensResponse(
+            accessToken, expiresIn, refreshToken, user.TenantId, Roles.Owner, null, device.Id);
     }
 
     public async Task<AuthTokensResponse> RefreshAsync(
@@ -155,7 +156,8 @@ public class AuthService : IAuthService
         var (tokenRow, _) = await ValidateDeviceTokenAsync(refreshToken, cancellationToken);
 
         var (accessToken, expiresIn) = _tokens.CreateOwnerToken(tokenRow.UserId, tokenRow.TenantId);
-        return new AuthTokensResponse(accessToken, expiresIn, refreshToken, tokenRow.TenantId, Roles.Owner, null);
+        return new AuthTokensResponse(
+            accessToken, expiresIn, refreshToken, tokenRow.TenantId, Roles.Owner, null, tokenRow.DeviceId);
     }
 
     public async Task<AuthTokensResponse> CashierLoginAsync(
@@ -196,7 +198,8 @@ public class AuthService : IAuthService
         await _db.SaveChangesAsync(cancellationToken);
 
         var (accessToken, expiresIn) = _tokens.CreateCashierToken(tokenRow.UserId, tokenRow.TenantId, cashier.Id);
-        return new AuthTokensResponse(accessToken, expiresIn, null, tokenRow.TenantId, Roles.Cashier, cashier.Id);
+        return new AuthTokensResponse(
+            accessToken, expiresIn, null, tokenRow.TenantId, Roles.Cashier, cashier.Id, tokenRow.DeviceId);
     }
 
     public async Task<CashierDto> CreateCashierAsync(

@@ -6,7 +6,7 @@ namespace SpazaHub.Domain.Entities;
 /// End-of-day drawer reconciliation. Expected cash = opening float + cash sales
 /// + cashback fees taken in cash - cashback paid out - payouts and expenses.
 /// </summary>
-public class CashUp : Entity, ITenantOwned
+public class CashUp : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 
@@ -33,4 +33,7 @@ public class CashUp : Entity, ITenantOwned
     public DateTime? OwnerSignedAtUtc { get; set; }
 
     public string? Notes { get; set; }
+
+    /// <summary>LWW timestamp: cash-ups mutate through sign-off, unlike the cash movements they summarize.</summary>
+    public DateTime UpdatedAtUtc { get; set; }
 }
