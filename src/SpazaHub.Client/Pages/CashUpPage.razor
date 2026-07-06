@@ -1,0 +1,181 @@
+@page "/cashup"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@using SpazaHub.Domain.Enums
+@inject AuthApiClient Auth
+@inject CashUpService CashUpSvc
+@inject NavigationManager Nav
+
+<PageTitle>Cash-up</PageTitle>
+
+<div class="cashup-page">
+    <h1>Cash-up</h1>
+
+    @if (_cashUp is null)
+    {
+        <label class="big-label">Opening float in the drawer</label>
+        <input class="big-input" type="number" inputmode="decimal" step="10" min="0" @bind="_openingFloat" />
+        <button class="big-btn primary" @onclick="StartDayAsync">Open drawer</button>
+    }
+    else
+    {
+        <div class="drawer-status">
+            <div class="quote-row"><span>Opening float</span><span>R @_cashUp.OpeningFloat.ToString("0.00")</span></div>
+            <div class="quote-row charge"><span>Cash in drawer now</span><span>R @_drawerCash.ToString("0.00")</span></div>
+        </div>
+
+        @if (_cashUp.CashierSignedAtUtc is null)
+        {
+            <h2>Money out</h2>
+            <div class="split-row">
+                <select class="big-input" @bind="_cashOutType">
+                    <option value="@CashMovementType.Payout">Supplier payout</option>
+                    <option value="@CashMovementType.Expense">Expense</option>
+                    <option value="@CashMovementType.BankDrop">Bank drop</option>
+                </select>
+                <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0"
+                       placeholder="Amount" @bind="_cashOutAmount" />
+            </div>
+            <input class="big-input" placeholder="What for (optional)" @bind="_cashOutNote" />
+            <button class="big-btn" @onclick="RecordCashOutAsync" disabled="@(_cashOutAmount <= 0)">Record money out</button>
+
+            <h2>Count and sign off</h2>
+            <label class="big-label">Cash counted in the drawer</label>
+            <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_declared" />
+            <button class="big-btn charge" @onclick="CompleteAsync">Sign off cash-up</button>
+        }
+        else
+        {
+            <div class="cashup-result @(_cashUp.Variance == 0 ? "ok" : "short")">
+                <div class="quote-row"><span>Expected</span><span>R @_cashUp.ExpectedCash.ToString("0.00")</span></div>
+                <div class="quote-row"><span>Counted</span><span>R @_cashUp.DeclaredCash.ToString("0.00")</span></div>
+                <div class="quote-row charge">
+                    <span>@(_cashUp.Variance == 0 ? "Balanced" : _cashUp.Variance > 0 ? "Over" : "Short")</span>
+                    <span>R @Math.Abs(_cashUp.Variance).ToString("0.00")</span>
+                </div>
+            </div>
+
+            @if (_cashUp.OwnerSignedAtUtc is null)
+            {
+                <button class="big-btn primary" @onclick="OwnerSignAsync">Owner countersign</button>
+            }
+            else
+            {
+                <p class="cashup-signed">Signed off by owner ✓</p>
+            }
+        }
+
+        <h2>Today's cash movements</h2>
+        <div class="movement-list">
+            @foreach (var movement in _movements)
+            {
+                <div class="movement-row">
+                    <span>@MovementLabel(movement)</span>
+                    <span class="@(movement.Amount < 0 ? "neg" : "")">R @movement.Amount.ToString("0.00")</span>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error-text">@_error</p>
+    }
+</div>
+
+@code {
+    private CashUp? _cashUp;
+    private decimal _openingFloat;
+    private decimal _drawerCash;
+    private decimal _declared;
+    private decimal _cashOutAmount;
+    private string? _cashOutNote;
+    private CashMovementType _cashOutType = CashMovementType.Payout;
+    private IReadOnlyList<CashMovement> _movements = [];
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var tradingDate = await CashUpSvc.GetCurrentTradingDateAsync();
+        _cashUp = await CashUpSvc.GetCashUpAsync(tradingDate);
+        if (_cashUp is not null)
+        {
+            _movements = await CashUpSvc.GetTradingDayMovementsAsync(tradingDate);
+            _drawerCash = await CashUpSvc.GetDrawerCashAsync();
+        }
+    }
+
+    private async Task StartDayAsync()
+    {
+        _error = null;
+        try
+        {
+            await CashUpSvc.StartDayAsync(_openingFloat, Auth.DeviceId);
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RecordCashOutAsync()
+    {
+        _error = null;
+        try
+        {
+            await CashUpSvc.RecordCashOutAsync(_cashOutAmount, _cashOutType, _cashOutNote);
+            _cashOutAmount = 0m;
+            _cashOutNote = null;
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task CompleteAsync()
+    {
+        _error = null;
+        try
+        {
+            _cashUp = await CashUpSvc.CompleteCashUpAsync(_declared);
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task OwnerSignAsync()
+    {
+        _cashUp = await CashUpSvc.OwnerSignAsync(_cashUp!.TradingDate);
+        await ReloadAsync();
+    }
+
+    private static string MovementLabel(CashMovement movement) => movement.Type switch
+    {
+        CashMovementType.OpeningFloat => "Opening float",
+        CashMovementType.CashSale => "Cash sale",
+        CashMovementType.CashRefund => "Refund",
+        CashMovementType.CashbackPaid => "Cashback paid",
+        CashMovementType.Payout => string.IsNullOrEmpty(movement.Note) ? "Payout" : $"Payout: {movement.Note}",
+        CashMovementType.Expense => string.IsNullOrEmpty(movement.Note) ? "Expense" : $"Expense: {movement.Note}",
+        CashMovementType.BankDrop => "Bank drop",
+        _ => movement.Type.ToString()
+    };
+}

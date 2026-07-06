@@ -33,6 +33,10 @@ builder.Services.AddSingleton<QuickRingService>();
 builder.Services.AddSingleton<NotificationService>();
 builder.Services.AddScoped<BarcodeScannerService>();
 
+builder.Services.AddSingleton<CashbackService>();
+builder.Services.AddSingleton<CashUpService>();
+builder.Services.AddSingleton<ReportService>();
+
 var host = builder.Build();
 
 // Restore the local database from OPFS before anything opens it, then start the

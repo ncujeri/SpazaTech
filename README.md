@@ -96,12 +96,24 @@ What was built:
 
 Verified in a real browser (headless Chromium against the published PWA): boot, offline demo setup, product creation, goods received, quick-ring cash sale, and stock decrement, with EF Core SQLite running inside WebAssembly and no console errors. 102 passing tests overall; POS flow tests assert the outbox ordering the sync engine depends on (sale rows always precede their children).
 
+## Phase 4: Cash-Up + Cashback (complete)
+
+What was built:
+
+- **CashbackBuilder** (Domain, pure): produces the full append-only event stream per cashback: the `CashbackTransaction` with `FeeRateApplied` snapshotted, the negative `CashbackPaid` drawer movement, and the `FeeIncome` row. The fee is charged on top (customer receives R100, card charged R110), and every control from the spec is enforced before anything is written: per-transaction limit, per-day limit, drawer cash floor, cashier permission flag, and the owner-review flag at the configured threshold. Refusals come back as typed reasons the UI translates into plain language.
+- **TradingDay** (Domain): the trading day rolls at the tenant-configured hour of shop local time (default 04:00 SAST), so a 02:00 sale belongs to the previous day. All window queries share this one implementation.
+- **CashUpCalculator + CashUpService**: the drawer lifecycle. Opening the day records the float as both a cash movement and the `CashUp` row; payouts, expenses, and bank drops are explicit movements; expected cash is always the sum of the day's movement stream (the spec formula falls out of the signs); variance is counted minus expected, with cashier sign-off and owner countersign.
+- **DailyReportCalculator + ReportService**: goods revenue and margin from the cost snapshots taken at sale time, cashback fees on their own service-income line (never inside goods margin), tender breakdown, payouts, and expected cash. Voided sales net to zero and are not counted.
+- **UI**: a cashback screen that shows all three numbers before confirm ("Cash out | Fee | Charge card") with friendly blocked-state reasons, a cash-up screen with live drawer cash and the day's movement list, and a daily report page. All local-first; the card itself is charged on the external terminal per the spec.
+
+Verified in headless Chromium against the published PWA: open drawer with R500 float, R100 cashback quoted 100/10/110 and completed, drawer live-drops to R400, cash-up balances at zero variance, and the report shows the R10 fee as service income. 127 passing tests.
+
 ## Roadmap
 
 1. Foundation (done)
 2. Sync engine (done)
 3. POS + Inventory (done)
-4. Cash-Up + Cashback
+4. Cash-Up + Cashback (done)
 5. Makhulu Book (customer credit ledger)
 6. Reporting polish
 7. SMSFlow integration

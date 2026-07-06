@@ -1,0 +1,67 @@
+@page "/report"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Services
+@inject AuthApiClient Auth
+@inject ReportService Reports
+@inject CashUpService CashUpSvc
+@inject NavigationManager Nav
+
+<PageTitle>Daily report</PageTitle>
+
+<div class="report-page">
+    <div class="report-header">
+        <h1>Daily report</h1>
+        <input class="big-input date" type="date" @bind="_date" @bind:after="ReloadAsync" />
+    </div>
+
+    @if (_summary is not null)
+    {
+        <h2>Goods</h2>
+        <div class="report-block">
+            <div class="quote-row"><span>Sales</span><span>@_summary.SaleCount</span></div>
+            <div class="quote-row"><span>Revenue</span><span>R @_summary.GoodsRevenue.ToString("0.00")</span></div>
+            <div class="quote-row"><span>Cost of goods</span><span>R @_summary.GoodsCost.ToString("0.00")</span></div>
+            <div class="quote-row charge"><span>Gross margin</span><span>R @_summary.GrossMargin.ToString("0.00")</span></div>
+        </div>
+
+        <h2>Service income</h2>
+        <div class="report-block">
+            <div class="quote-row"><span>Cashback fees (@_summary.CashbackCount)</span><span>R @_summary.CashbackFeeIncome.ToString("0.00")</span></div>
+            <div class="quote-row"><span>Cashback paid out</span><span>R @_summary.CashbackPaidOut.ToString("0.00")</span></div>
+        </div>
+
+        <h2>Tenders</h2>
+        <div class="report-block">
+            <div class="quote-row"><span>Cash</span><span>R @_summary.CashTendered.ToString("0.00")</span></div>
+            <div class="quote-row"><span>Card</span><span>R @_summary.CardTendered.ToString("0.00")</span></div>
+            <div class="quote-row"><span>SASSA</span><span>R @_summary.SassaTendered.ToString("0.00")</span></div>
+            <div class="quote-row"><span>QR</span><span>R @_summary.QrTendered.ToString("0.00")</span></div>
+        </div>
+
+        <h2>Drawer</h2>
+        <div class="report-block">
+            <div class="quote-row"><span>Payouts and expenses</span><span>R @_summary.PayoutsAndExpenses.ToString("0.00")</span></div>
+            <div class="quote-row charge"><span>Expected cash</span><span>R @_summary.ExpectedCash.ToString("0.00")</span></div>
+        </div>
+    }
+</div>
+
+@code {
+    private DateOnly _date = DateOnly.FromDateTime(DateTime.Today);
+    private DailySummary? _summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        _date = await CashUpSvc.GetCurrentTradingDateAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => _summary = await Reports.GetDailySummaryAsync(_date);
+}

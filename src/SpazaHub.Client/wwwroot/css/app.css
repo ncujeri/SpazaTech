@@ -278,3 +278,47 @@ code {
 .product-name { font-weight: 700; font-size: 1.1rem; }
 .product-qty { color: #444; }
 .product-actions { display: flex; }
+
+/* Phase 4: cashback, cash-up, report */
+
+.cashback-page, .cashup-page, .report-page { max-width: 520px; margin: 0 auto; }
+
+.cashback-quote, .drawer-status, .report-block, .cashup-result {
+    border: 2px solid #1b2a41;
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    background: #f4f7fb;
+}
+
+.quote-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.2rem;
+    padding: 6px 0;
+    font-weight: 600;
+}
+
+.quote-row.fee { color: #8a4b00; }
+.quote-row.charge { font-size: 1.45rem; font-weight: 800; border-top: 2px solid #1b2a41; }
+
+.cashback-done { text-align: center; padding: 16px 0; }
+.cashback-big { font-size: 2rem; font-weight: 800; color: #106333; }
+.review-flag { color: #8a4b00; font-weight: 700; }
+
+.cashup-result.ok { background: #e5f6e9; border-color: #106333; }
+.cashup-result.short { background: #fdeaea; border-color: #b3002d; }
+.cashup-signed { color: #106333; font-weight: 800; font-size: 1.2rem; }
+
+.movement-list { margin: 8px 0; }
+.movement-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border-bottom: 1px solid #c8d0da;
+    font-size: 1.05rem;
+}
+.movement-row .neg { color: #b3002d; font-weight: 700; }
+
+.report-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.report-header .big-input.date { width: auto; }
