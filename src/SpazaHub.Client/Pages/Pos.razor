@@ -1,0 +1,301 @@
+@page "/pos"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@using SpazaHub.Domain.Enums
+@using SpazaHub.Domain.Services
+@implements IAsyncDisposable
+@inject AuthApiClient Auth
+@inject PosService PosSvc
+@inject InventoryService Inventory
+@inject QuickRingService QuickRing
+@inject BarcodeScannerService Scanner
+@inject NotificationService Notifications
+@inject NavigationManager Nav
+
+<PageTitle>Sell</PageTitle>
+
+@if (!Auth.IsSetUp)
+{
+    <p>Setting up...</p>
+}
+else
+{
+    <div class="pos-layout">
+        <div class="pos-total-bar">
+            <span class="pos-total">R @Total.ToString("0.00")</span>
+            @if (_flash is not null)
+            {
+                <span class="pos-flash">@_flash</span>
+            }
+        </div>
+
+        @if (_lowStockAlerts.Count > 0)
+        {
+            <div class="low-stock-banner">
+                @foreach (var alert in _lowStockAlerts)
+                {
+                    <span>⚠ @alert.Name: @alert.QuantityLeft.ToString("0.###") left</span>
+                }
+            </div>
+        }
+
+        @if (_scanning)
+        {
+            <div class="scan-overlay">
+                <video id="pos-video" playsinline muted></video>
+                <button class="big-btn" @onclick="StopScanAsync">Close</button>
+            </div>
+        }
+
+        @if (!_tendering)
+        {
+            <div class="quick-grid">
+                @foreach (var product in _quickRing)
+                {
+                    <button class="quick-btn" @onclick="() => AddProduct(product)">
+                        <span class="quick-name">@product.Name</span>
+                        <span class="quick-price">R @product.SellPrice.ToString("0.00")</span>
+                    </button>
+                }
+                <button class="quick-btn loose" @onclick="() => _looseOpen = !_looseOpen">
+                    <span class="quick-name">Loose amount</span>
+                </button>
+                <button class="quick-btn scan" @onclick="StartScanAsync">
+                    <span class="quick-name">📷 Scan</span>
+                </button>
+            </div>
+
+            @if (_looseOpen)
+            {
+                <div class="loose-row">
+                    <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0"
+                           placeholder="Amount" @bind="_looseAmount" />
+                    <button class="big-btn primary" @onclick="AddLoose">Add</button>
+                </div>
+            }
+
+            <div class="cart-list">
+                @foreach (var line in _cart)
+                {
+                    <div class="cart-line">
+                        <span class="cart-name">@line.Description</span>
+                        <span class="cart-qty">
+                            <button class="qty-btn" @onclick="() => ChangeQty(line, -1)">−</button>
+                            @line.Quantity.ToString("0.###")
+                            <button class="qty-btn" @onclick="() => ChangeQty(line, 1)">+</button>
+                        </span>
+                        <span class="cart-amount">R @((line.Quantity * line.UnitPrice).ToString("0.00"))</span>
+                    </div>
+                }
+            </div>
+
+            <button class="big-btn charge" @onclick="() => _tendering = true"
+                    disabled="@(_cart.Count == 0)">
+                Charge R @Total.ToString("0.00")
+            </button>
+        }
+        else
+        {
+            <div class="tender-panel">
+                @if (_nonCash.Count > 0)
+                {
+                    <div class="tender-summary">
+                        @foreach (var tender in _nonCash)
+                        {
+                            <span>@tender.Method: R @tender.Amount.ToString("0.00")</span>
+                        }
+                    </div>
+                }
+                <p class="tender-cash-line">Cash due: R @CashDueRounded.ToString("0.00")</p>
+
+                <button class="big-btn cash" @onclick="() => CompleteAsync()">CASH R @CashDueRounded.ToString("0.00")</button>
+                <button class="big-btn card" @onclick="() => AddFullNonCash(PaymentMethod.Card)">CARD (full)</button>
+                <button class="big-btn sassa" @onclick="() => AddFullNonCash(PaymentMethod.SassaCard)">SASSA (full)</button>
+
+                <div class="split-row">
+                    <select class="big-input" @bind="_splitMethod">
+                        <option value="@PaymentMethod.Card">Card</option>
+                        <option value="@PaymentMethod.SassaCard">SASSA</option>
+                        <option value="@PaymentMethod.Qr">QR</option>
+                    </select>
+                    <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0"
+                           placeholder="Amount" @bind="_splitAmount" />
+                    <button class="big-btn" @onclick="AddSplit">Add</button>
+                </div>
+
+                <button class="big-btn" @onclick="CancelTender">Back</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private sealed class UiCartLine
+    {
+        public Guid? ProductId { get; init; }
+        public string Description { get; init; } = string.Empty;
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; init; }
+        public decimal UnitCost { get; init; }
+    }
+
+    private readonly List<UiCartLine> _cart = [];
+    private readonly List<TenderInput> _nonCash = [];
+    private IReadOnlyList<Product> _quickRing = [];
+    private IReadOnlyList<LowStockAlert> _lowStockAlerts = [];
+    private bool _looseOpen;
+    private decimal _looseAmount;
+    private bool _tendering;
+    private bool _scanning;
+    private PaymentMethod _splitMethod = PaymentMethod.Card;
+    private decimal _splitAmount;
+    private string? _flash;
+
+    private decimal Total => _cart.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
+
+    private decimal CashDueRounded
+        => CashRounding.RoundCash(Total - _nonCash.Sum(t => t.Amount), 0.10m).RoundedAmount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        Scanner.BarcodeDetected += OnBarcodeDetected;
+        await Scanner.StartWedgeAsync();
+        await ReloadQuickRingAsync();
+    }
+
+    private async Task ReloadQuickRingAsync()
+        => _quickRing = await QuickRing.GetQuickRingProductsAsync();
+
+    private void AddProduct(Product product)
+    {
+        var line = _cart.FirstOrDefault(l => l.ProductId == product.Id);
+        if (line is null)
+        {
+            _cart.Add(new UiCartLine
+            {
+                ProductId = product.Id,
+                Description = product.Name,
+                Quantity = 1m,
+                UnitPrice = product.SellPrice,
+                UnitCost = product.WeightedAverageCost
+            });
+        }
+        else
+        {
+            line.Quantity += 1m;
+        }
+    }
+
+    private void AddLoose()
+    {
+        if (_looseAmount <= 0m)
+        {
+            return;
+        }
+
+        _cart.Add(new UiCartLine { Description = "Loose", Quantity = 1m, UnitPrice = _looseAmount });
+        _looseAmount = 0m;
+        _looseOpen = false;
+    }
+
+    private void ChangeQty(UiCartLine line, int delta)
+    {
+        line.Quantity += delta;
+        if (line.Quantity <= 0m)
+        {
+            _cart.Remove(line);
+        }
+    }
+
+    private void AddFullNonCash(PaymentMethod method)
+    {
+        _nonCash.Clear();
+        _nonCash.Add(new TenderInput(method, Total));
+        _ = CompleteAsync();
+    }
+
+    private void AddSplit()
+    {
+        if (_splitAmount > 0m && _nonCash.Sum(t => t.Amount) + _splitAmount <= Total)
+        {
+            _nonCash.Add(new TenderInput(_splitMethod, _splitAmount));
+            _splitAmount = 0m;
+        }
+    }
+
+    private void CancelTender()
+    {
+        _tendering = false;
+        _nonCash.Clear();
+    }
+
+    private async Task CompleteAsync()
+    {
+        var cartLines = _cart
+            .Select(l => new CartLine(l.ProductId, l.Description, l.Quantity, l.UnitPrice, l.UnitCost))
+            .ToList();
+
+        var (completed, alerts) = await PosSvc.CompleteSaleAsync(cartLines, _nonCash.ToList());
+
+        _lowStockAlerts = alerts;
+        foreach (var alert in alerts)
+        {
+            await Notifications.NotifyLowStockAsync(alert.Name, alert.QuantityLeft);
+        }
+
+        _cart.Clear();
+        _nonCash.Clear();
+        _tendering = false;
+        _flash = $"Sale done: R {completed.Sale.Total:0.00}";
+        await ReloadQuickRingAsync();
+        StateHasChanged();
+    }
+
+    private async Task StartScanAsync()
+    {
+        _scanning = true;
+        StateHasChanged();
+        await Task.Yield();
+        await Scanner.StartAsync("pos-video");
+    }
+
+    private async Task StopScanAsync()
+    {
+        _scanning = false;
+        await Scanner.StopAsync();
+    }
+
+    private void OnBarcodeDetected(string barcode)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            _scanning = false;
+            var product = await Inventory.FindByBarcodeAsync(barcode);
+            if (product is not null)
+            {
+                AddProduct(product);
+                _flash = null;
+            }
+            else
+            {
+                _flash = $"Unknown barcode {barcode}";
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Scanner.BarcodeDetected -= OnBarcodeDetected;
+        await Scanner.StopWedgeAsync();
+        await Scanner.StopAsync();
+    }
+}

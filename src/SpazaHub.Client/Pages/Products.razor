@@ -1,0 +1,157 @@
+@page "/products"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@using SpazaHub.Domain.Enums
+@inject AuthApiClient Auth
+@inject InventoryService Inventory
+@inject NavigationManager Nav
+
+<PageTitle>Products</PageTitle>
+
+<div class="products-page">
+    <div class="products-header">
+        <h1>Products</h1>
+        <button class="big-btn primary" @onclick="NewProduct">+ New product</button>
+    </div>
+
+    @if (_editing is not null)
+    {
+        <div class="product-form">
+            <label class="big-label">Name</label>
+            <input class="big-input" @bind="_editing.Name" />
+
+            <label class="big-label">Barcode (scan or type)</label>
+            <input class="big-input" @bind="_editing.Barcode" />
+
+            <label class="big-label">Sell price (R)</label>
+            <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_editing.SellPrice" />
+
+            <label class="big-label">Low stock alert at</label>
+            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_editing.LowStockThreshold" />
+
+            <div class="form-actions">
+                <button class="big-btn primary" @onclick="SaveProductAsync">Save</button>
+                <button class="big-btn" @onclick="() => _editing = null">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (_stockAction is not null)
+    {
+        <div class="product-form">
+            <h2>@_stockActionTitle: @_stockProduct!.Name</h2>
+
+            <label class="big-label">Quantity</label>
+            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_stockQty" />
+
+            @if (_stockAction == StockMovementType.GoodsReceived)
+            {
+                <label class="big-label">Cost per unit (R)</label>
+                <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_stockCost" />
+            }
+
+            <div class="form-actions">
+                <button class="big-btn primary" @onclick="ApplyStockActionAsync">Save</button>
+                <button class="big-btn" @onclick="() => _stockAction = null">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <div class="product-list">
+        @foreach (var product in _products)
+        {
+            <div class="product-row @(product.LowStockThreshold > 0 && product.CachedQuantity <= product.LowStockThreshold ? "low" : "")">
+                <div class="product-main" @onclick="() => Edit(product)">
+                    <span class="product-name">@product.Name</span>
+                    <span class="product-price">R @product.SellPrice.ToString("0.00")</span>
+                    <span class="product-qty">@product.CachedQuantity.ToString("0.###") in stock</span>
+                </div>
+                <div class="product-actions">
+                    <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.GoodsReceived)">Receive</button>
+                    <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.Wastage)">Waste</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<Product> _products = [];
+    private Product? _editing;
+    private Product? _stockProduct;
+    private StockMovementType? _stockAction;
+    private decimal _stockQty;
+    private decimal _stockCost;
+
+    private string _stockActionTitle => _stockAction == StockMovementType.GoodsReceived ? "Receive stock" : "Record wastage";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => _products = await Inventory.GetProductsAsync();
+
+    private void NewProduct() => _editing = new Product();
+
+    private void Edit(Product product) => _editing = new Product
+    {
+        Id = product.Id,
+        Name = product.Name,
+        Barcode = product.Barcode,
+        SellPrice = product.SellPrice,
+        WeightedAverageCost = product.WeightedAverageCost,
+        CachedQuantity = product.CachedQuantity,
+        LowStockThreshold = product.LowStockThreshold,
+        IsActive = product.IsActive,
+        CreatedAtUtc = product.CreatedAtUtc
+    };
+
+    private async Task SaveProductAsync()
+    {
+        if (_editing is null || string.IsNullOrWhiteSpace(_editing.Name))
+        {
+            return;
+        }
+
+        await Inventory.SaveProductAsync(_editing);
+        _editing = null;
+        await ReloadAsync();
+    }
+
+    private void OpenStockAction(Product product, StockMovementType type)
+    {
+        _stockProduct = product;
+        _stockAction = type;
+        _stockQty = 0m;
+        _stockCost = product.WeightedAverageCost;
+    }
+
+    private async Task ApplyStockActionAsync()
+    {
+        if (_stockProduct is null || _stockAction is null || _stockQty <= 0m)
+        {
+            return;
+        }
+
+        if (_stockAction == StockMovementType.GoodsReceived)
+        {
+            await Inventory.ReceiveGoodsAsync(_stockProduct.Id, _stockQty, _stockCost);
+        }
+        else
+        {
+            await Inventory.AdjustStockAsync(_stockProduct.Id, -_stockQty, StockMovementType.Wastage, "Wastage");
+        }
+
+        _stockAction = null;
+        _stockProduct = null;
+        await ReloadAsync();
+    }
+}

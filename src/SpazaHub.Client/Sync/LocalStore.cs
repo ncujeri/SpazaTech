@@ -18,6 +18,7 @@ public class LocalStore
     private readonly IDbContextFactory<ClientDbContext> _contextFactory;
     private readonly OpfsDbPersistence _persistence;
     private readonly ILogger<LocalStore> _logger;
+    private bool _schemaEnsured;
 
     public LocalStore(
         IDbContextFactory<ClientDbContext> contextFactory,
@@ -29,11 +30,24 @@ public class LocalStore
         _logger = logger;
     }
 
+    /// <summary>
+    /// Creates the schema on first touch. A fresh device queries state before setup;
+    /// that must return empty, not crash on a missing table.
+    /// </summary>
+    private async Task EnsureSchemaAsync(ClientDbContext db)
+    {
+        if (!_schemaEnsured)
+        {
+            await db.Database.EnsureCreatedAsync();
+            _schemaEnsured = true;
+        }
+    }
+
     /// <summary>Creates the schema and the sync state row after login on a new device.</summary>
     public async Task InitializeAsync(Guid tenantId, Guid deviceId)
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
-        await db.Database.EnsureCreatedAsync();
+        await EnsureSchemaAsync(db);
 
         var state = await db.SyncState.FindAsync(SyncClientState.SingletonId);
         if (state is null)
@@ -48,26 +62,34 @@ public class LocalStore
     public async Task<SyncClientState?> GetStateAsync()
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
+        await EnsureSchemaAsync(db);
         return await db.SyncState.AsNoTracking().FirstOrDefaultAsync();
     }
 
     /// <summary>
     /// Upserts an entity locally and appends the outbox row in one transaction.
-    /// The entity must be registered for sync.
+    /// The entity must be registered for sync and tenant-owned.
     /// </summary>
-    public async Task SaveLocalWriteAsync<TEntity>(TEntity entity) where TEntity : Entity, ITenantOwned
+    public async Task SaveLocalWriteAsync(Entity entity)
     {
-        if (!SyncEntityRegistry.TryGet(typeof(TEntity), out var descriptor) || !descriptor.PushAllowed)
+        Type entityType = entity.GetType();
+
+        if (entity is not ITenantOwned owned)
         {
-            throw new InvalidOperationException($"{typeof(TEntity).Name} is not a pushable sync entity.");
+            throw new InvalidOperationException($"{entityType.Name} is not tenant-owned.");
+        }
+
+        if (!SyncEntityRegistry.TryGet(entityType, out var descriptor) || !descriptor.PushAllowed)
+        {
+            throw new InvalidOperationException($"{entityType.Name} is not a pushable sync entity.");
         }
 
         await using var db = await _contextFactory.CreateDbContextAsync();
 
         var state = await db.SyncState.FirstAsync();
-        entity.TenantId = state.TenantId;
+        owned.TenantId = state.TenantId;
 
-        var existing = await db.FindAsync(typeof(TEntity), entity.Id);
+        var existing = await db.FindAsync(entityType, entity.Id);
         if (existing is null)
         {
             db.Add(entity);

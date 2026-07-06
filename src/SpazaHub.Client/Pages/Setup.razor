@@ -1,0 +1,103 @@
+@page "/setup"
+@using SpazaHub.Client.Services
+@inject AuthApiClient Auth
+@inject NavigationManager Nav
+
+<PageTitle>SpazaHub setup</PageTitle>
+
+<div class="setup-panel">
+    <h1>Set up this device</h1>
+
+    @if (_step == Step.Phone)
+    {
+        <label class="big-label" for="phone">Your cellphone number</label>
+        <input id="phone" class="big-input" type="tel" inputmode="tel" placeholder="082 123 4567" @bind="_phone" />
+
+        <label class="big-label" for="shop">Shop name</label>
+        <input id="shop" class="big-input" type="text" placeholder="My Spaza" @bind="_shopName" />
+
+        <button class="big-btn primary" @onclick="RequestOtpAsync" disabled="@_busy">Send SMS code</button>
+        <button class="big-btn" @onclick="StartDemoAsync" disabled="@_busy">Try offline demo</button>
+    }
+    else if (_step == Step.Otp)
+    {
+        <label class="big-label" for="otp">Enter the 6 digit code from the SMS</label>
+        <input id="otp" class="big-input otp" type="text" inputmode="numeric" maxlength="6" @bind="_code" />
+
+        <button class="big-btn primary" @onclick="VerifyAsync" disabled="@_busy">Confirm</button>
+        <button class="big-btn" @onclick="() => _step = Step.Phone">Back</button>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error-text">@_error</p>
+    }
+</div>
+
+@code {
+    private enum Step { Phone, Otp }
+
+    private Step _step = Step.Phone;
+    private string _phone = string.Empty;
+    private string _shopName = string.Empty;
+    private string _code = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private async Task RequestOtpAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            if (await Auth.RequestOtpAsync(_phone, _shopName))
+            {
+                _step = Step.Otp;
+            }
+            else
+            {
+                _error = "Could not send the code. Check the number and try again.";
+            }
+        }
+        catch
+        {
+            _error = "No connection. Try again with signal, or use the offline demo.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task VerifyAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            if (await Auth.VerifyOtpAsync(_phone, _code, "This device"))
+            {
+                Nav.NavigateTo("/pos");
+            }
+            else
+            {
+                _error = "That code is not right. Try again.";
+            }
+        }
+        catch
+        {
+            _error = "No connection. Try again with signal.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StartDemoAsync()
+    {
+        _busy = true;
+        await Auth.StartDemoModeAsync();
+        Nav.NavigateTo("/pos");
+    }
+}

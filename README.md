@@ -82,11 +82,25 @@ Test coverage: 85 passing tests. The sync suite covers duplicate batch replay (l
 
 Browser-side SQLite needs the `wasm-tools` workload (now installed in CI) and native relinking at publish. OPFS `createWritable` is solid on Chromium (the target Android fleet) but not on Safari. If real-device testing shows instability, the proposed fallback is IndexedDB persistence of the same database file bytes behind the existing `OpfsDbPersistence` seam, which is a one-class swap. No switch will be made without approval.
 
+## Phase 3: POS + Inventory (complete)
+
+What was built:
+
+- **SaleBuilder** (Domain, pure logic): assembles the immutable sale graph from cart lines and tenders. Cash is never entered as a tender; it is always the rounded remainder, with the rounding difference recorded explicitly on the sale so cash-up balances. Unit costs are snapshotted onto every line at sale time. Voids are compensating sales referencing the original, and the cash refund mirrors the rounded amount the customer actually paid, not the raw total.
+- **PosService**: completes a sale entirely locally in one pass: sale, lines, payments, negative stock movements, and the drawer cash movement all written through the outbox in parent-first order, cached quantities recomputed, low-stock thresholds checked. Zero network on the sale path.
+- **InventoryService**: product catalog CRUD, goods received (captures cost per movement and moves the weighted average), adjustments, and wastage as distinct movement types.
+- **Quick ring**: the POS grid self-orders by local sales velocity (units sold over the trailing 14 days, computed from this device's sale lines).
+- **Barcode scanning**: native `BarcodeDetector` where available, vendored ZXing UMD fallback for older devices (`wwwroot/lib/zxing`), and Bluetooth keyboard-wedge scanners handled as fast Enter-terminated keystroke bursts.
+- **Low-stock alerts**: fire locally after each sale via the browser Notification API, with an inline banner fallback when permission is denied.
+- **UI**: setup page (phone + OTP login against the API, or a fully offline demo mode), POS screen and product management built for budget Android: 48dp+ touch targets, high contrast, minimal text, one-handed layout.
+
+Verified in a real browser (headless Chromium against the published PWA): boot, offline demo setup, product creation, goods received, quick-ring cash sale, and stock decrement, with EF Core SQLite running inside WebAssembly and no console errors. 102 passing tests overall; POS flow tests assert the outbox ordering the sync engine depends on (sale rows always precede their children).
+
 ## Roadmap
 
 1. Foundation (done)
 2. Sync engine (done)
-3. POS + Inventory
+3. POS + Inventory (done)
 4. Cash-Up + Cashback
 5. Makhulu Book (customer credit ledger)
 6. Reporting polish

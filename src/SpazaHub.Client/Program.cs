@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.EntityFrameworkCore;
 using SpazaHub.Client;
 using SpazaHub.Client.Data;
+using SpazaHub.Client.Services;
 using SpazaHub.Client.Sync;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
@@ -24,6 +25,13 @@ builder.Services.AddSingleton<OpfsDbPersistence>();
 builder.Services.AddSingleton<LocalStore>();
 builder.Services.AddSingleton<SyncApiClient>();
 builder.Services.AddSingleton<BackgroundSyncService>();
+
+builder.Services.AddSingleton<AuthApiClient>();
+builder.Services.AddSingleton<PosService>();
+builder.Services.AddSingleton<InventoryService>();
+builder.Services.AddSingleton<QuickRingService>();
+builder.Services.AddSingleton<NotificationService>();
+builder.Services.AddScoped<BarcodeScannerService>();
 
 var host = builder.Build();
 
