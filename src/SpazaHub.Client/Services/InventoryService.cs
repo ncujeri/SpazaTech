@@ -55,11 +55,12 @@ public class InventoryService
     }
 
     /// <summary>
-    /// Receives stock: captures the cost on the movement, moves the weighted average
-    /// cost, and bumps the cached quantity.
+    /// Receives stock: captures the cost and optional batch expiry date on the
+    /// movement, moves the weighted average cost, and bumps the cached quantity.
     /// </summary>
     public async Task<Product> ReceiveGoodsAsync(
-        Guid productId, decimal quantity, decimal unitCost, Guid? cashierId = null)
+        Guid productId, decimal quantity, decimal unitCost,
+        DateOnly? expiryDate = null, Guid? cashierId = null)
     {
         var product = await RequireProductAsync(productId);
 
@@ -74,12 +75,65 @@ public class InventoryService
             Type = StockMovementType.GoodsReceived,
             Quantity = quantity,
             UnitCost = unitCost,
+            ExpiryDate = expiryDate,
             CashierId = cashierId,
             OccurredAtUtc = DateTime.UtcNow
         });
         await _store.SaveLocalWriteAsync(product);
 
         return product;
+    }
+
+    /// <summary>A product batch that is expired or expiring soon, with its name for display.</summary>
+    public sealed record NamedExpiryAlert(string ProductName, ExpiryAlert Alert);
+
+    /// <summary>
+    /// Batches estimated to still be on the shelf that are past or near their
+    /// best-before date, soonest first. The window is owner-configurable.
+    /// </summary>
+    public async Task<IReadOnlyList<NamedExpiryAlert>> GetExpiryAlertsAsync()
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+
+        var config = await db.TenantConfigs.AsNoTracking().FirstOrDefaultAsync() ?? new TenantConfig();
+        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+
+        var products = await db.Products.AsNoTracking()
+            .Where(p => p.IsActive && p.CachedQuantity > 0)
+            .ToListAsync();
+        if (products.Count == 0)
+        {
+            return [];
+        }
+
+        var productIds = products.Select(p => p.Id).ToList();
+        var receivedRows = await db.StockMovements.AsNoTracking()
+            .Where(m => m.Type == StockMovementType.GoodsReceived
+                && m.ExpiryDate != null
+                && productIds.Contains(m.ProductId))
+            .ToListAsync();
+
+        var withExpiry = receivedRows.Select(m => m.ProductId).ToHashSet();
+        var alerts = new List<NamedExpiryAlert>();
+
+        foreach (var product in products.Where(p => withExpiry.Contains(p.Id)))
+        {
+            // All batches count for shelf allocation, dated or not.
+            var batchRows = await db.StockMovements.AsNoTracking()
+                .Where(m => m.Type == StockMovementType.GoodsReceived && m.ProductId == product.Id)
+                .ToListAsync();
+            var batches = batchRows
+                .Select(m => new ExpiryBatch(m.ExpiryDate, m.Quantity, m.OccurredAtUtc))
+                .ToList();
+
+            foreach (var alert in ExpiryEvaluator.Evaluate(
+                product.Id, product.CachedQuantity, batches, today, config.ExpiryWarningDays))
+            {
+                alerts.Add(new NamedExpiryAlert(product.Name, alert));
+            }
+        }
+
+        return alerts.OrderBy(a => a.Alert.ExpiryDate).ToList();
     }
 
     /// <summary>Manual correction or wastage. Quantity is signed; wastage is negative.</summary>

@@ -38,5 +38,8 @@ public class TenantConfig : Entity, ITenantOwned, IMutableSynced
     /// <summary>Conservative default: at most one automated reminder per debtor per week.</summary>
     public int MaxRemindersPerDebtorPerWeek { get; set; } = 1;
 
+    /// <summary>Days ahead of a batch expiry date at which the warning starts firing.</summary>
+    public int ExpiryWarningDays { get; set; } = 7;
+
     public DateTime UpdatedAtUtc { get; set; }
 }

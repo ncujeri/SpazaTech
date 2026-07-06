@@ -198,6 +198,44 @@ public class PosFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task ExpiryAlerts_WarnForNearDateBatchAndClearWhenSoldThrough()
+    {
+        var product = await CreateProductAsync("Yoghurt", 15m);
+        DateOnly nearDate = DateOnly.FromDateTime(DateTime.Today).AddDays(3);
+
+        await _inventory.ReceiveGoodsAsync(product.Id, 6m, 10m, expiryDate: nearDate);
+
+        var alerts = await _inventory.GetExpiryAlertsAsync();
+        var alert = Assert.Single(alerts);
+        Assert.Equal("Yoghurt", alert.ProductName);
+        Assert.Equal(nearDate, alert.Alert.ExpiryDate);
+        Assert.Equal(6m, alert.Alert.EstimatedUnitsAtRisk);
+        Assert.False(alert.Alert.IsExpired);
+
+        // Sell the whole batch: the warning must clear.
+        await _pos.CompleteSaleAsync([new CartLine(product.Id, "Yoghurt", 6m, 15m, 10m)], []);
+        Assert.Empty(await _inventory.GetExpiryAlertsAsync());
+    }
+
+    [Fact]
+    public async Task ExpiryAlerts_ExpiredBatchIsFlaggedAndSyncsExpiryDate()
+    {
+        var product = await CreateProductAsync("Amasi", 25m);
+        DateOnly pastDate = DateOnly.FromDateTime(DateTime.Today).AddDays(-2);
+
+        await _inventory.ReceiveGoodsAsync(product.Id, 4m, 18m, expiryDate: pastDate);
+
+        var alert = Assert.Single(await _inventory.GetExpiryAlertsAsync());
+        Assert.True(alert.Alert.IsExpired);
+
+        // The batch expiry rides the sync payload so other devices warn too.
+        var pending = await _store.GetPendingItemsAsync(100);
+        var movementItem = pending.Single(i => i.EntityType == nameof(StockMovement));
+        Assert.Contains("expiryDate", movementItem.PayloadJson);
+        Assert.Contains(pastDate.ToString("yyyy-MM-dd"), movementItem.PayloadJson);
+    }
+
+    [Fact]
     public async Task MultiTenderSale_SplitsCashAndCard()
     {
         var product = await CreateProductAsync("Airtime holder", 100m);

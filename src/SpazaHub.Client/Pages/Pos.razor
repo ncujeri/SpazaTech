@@ -168,6 +168,24 @@ else
         Scanner.BarcodeDetected += OnBarcodeDetected;
         await Scanner.StartWedgeAsync();
         await ReloadQuickRingAsync();
+        await NotifyExpiringStockOnceAsync();
+    }
+
+    private static bool _expiryNotifiedThisSession;
+
+    private async Task NotifyExpiringStockOnceAsync()
+    {
+        if (_expiryNotifiedThisSession)
+        {
+            return;
+        }
+
+        _expiryNotifiedThisSession = true;
+        foreach (var item in await Inventory.GetExpiryAlertsAsync())
+        {
+            await Notifications.NotifyExpiryAsync(
+                item.ProductName, item.Alert.ExpiryDate, item.Alert.IsExpired);
+        }
     }
 
     private async Task ReloadQuickRingAsync()

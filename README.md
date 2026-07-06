@@ -108,6 +108,10 @@ What was built:
 
 Verified in headless Chromium against the published PWA: open drawer with R500 float, R100 cashback quoted 100/10/110 and completed, drawer live-drops to R400, cash-up balances at zero variance, and the report shows the R10 fee as service income. 127 passing tests.
 
+## Expiry tracking (added after Phase 4)
+
+Best-before dates are captured per goods-received batch on the stock movement, not as a single field on the product, because different deliveries expire on different dates. `ExpiryEvaluator` (Domain, pure) estimates what is still on the shelf: shops rotate stock oldest-first, so the on-hand quantity is allocated to the newest batches, and a fully sold old batch never warns. This allocation is a warning heuristic only; costing stays weighted average. Batches at or past their date, or within the owner-configurable warning window (`TenantConfig.ExpiryWarningDays`, default 7), surface as a banner on the Products page and a local notification on app open. The batch expiry rides the normal sync payload so every device warns.
+
 ## Roadmap
 
 1. Foundation (done)

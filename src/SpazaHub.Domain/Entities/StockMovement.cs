@@ -21,6 +21,12 @@ public class StockMovement : Entity, ITenantOwned, IAppendOnly
     /// <summary>Cost per unit, captured on every GoodsReceived movement.</summary>
     public decimal? UnitCost { get; set; }
 
+    /// <summary>
+    /// Best-before date of this batch, optionally captured on GoodsReceived. Expiry
+    /// warnings derive from batches estimated to still be on the shelf.
+    /// </summary>
+    public DateOnly? ExpiryDate { get; set; }
+
     public Guid? SaleId { get; set; }
 
     public Guid? CashierId { get; set; }

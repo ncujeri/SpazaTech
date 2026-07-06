@@ -32,4 +32,20 @@ public class NotificationService
             _logger.LogDebug(ex, "Notification failed; the inline alert still shows.");
         }
     }
+
+    public async Task NotifyExpiryAsync(string productName, DateOnly expiryDate, bool isExpired)
+    {
+        try
+        {
+            string title = isExpired ? "Stock expired" : "Stock expiring soon";
+            string body = isExpired
+                ? $"{productName} expired on {expiryDate:dd MMM}. Check the shelf."
+                : $"{productName} expires on {expiryDate:dd MMM}. Sell it first or mark it down.";
+            await _js.InvokeVoidAsync("spazaNotify", title, body);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Notification failed; the inline alert still shows.");
+        }
+    }
 }
