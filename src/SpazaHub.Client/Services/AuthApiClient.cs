@@ -29,8 +29,11 @@ public class AuthApiClient
 
     public bool IsSetUp => TenantId is not null;
 
+    private string _pendingShopName = string.Empty;
+
     public async Task<bool> RequestOtpAsync(string phone, string shopName)
     {
+        _pendingShopName = shopName;
         using var response = await _http.PostAsJsonAsync(
             "api/auth/register-owner", new RegisterOwnerRequest(phone, shopName));
         return response.IsSuccessStatusCode;
@@ -57,7 +60,7 @@ public class AuthApiClient
         TenantId = tokens.TenantId;
         DeviceId = tokens.DeviceId;
 
-        await _store.InitializeAsync(tokens.TenantId, tokens.DeviceId);
+        await _store.InitializeAsync(tokens.TenantId, tokens.DeviceId, _pendingShopName);
         return true;
     }
 
@@ -72,7 +75,7 @@ public class AuthApiClient
         TenantId = tenantId;
         DeviceId = deviceId;
 
-        await _store.InitializeAsync(tenantId, deviceId);
+        await _store.InitializeAsync(tenantId, deviceId, "Demo Spaza");
     }
 
     /// <summary>Restores session state from the local database after a reload.</summary>

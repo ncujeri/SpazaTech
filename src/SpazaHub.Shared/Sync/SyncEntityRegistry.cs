@@ -46,6 +46,7 @@ public static class SyncEntityRegistry
             Mutable<TenantConfig>(),
             Mutable<CashUp>(),
             Mutable<Cashier>(),
+            Mutable<CustomerMessage>(),
             // Wallet balance is server-authoritative: it syncs down but is never pushed.
             Mutable<TenantWallet>(pushAllowed: false)
         };

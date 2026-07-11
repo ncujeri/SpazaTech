@@ -43,12 +43,47 @@
             <div class="quote-row"><span>Payouts and expenses</span><span>R @_summary.PayoutsAndExpenses.ToString("0.00")</span></div>
             <div class="quote-row charge"><span>Expected cash</span><span>R @_summary.ExpectedCash.ToString("0.00")</span></div>
         </div>
+
+        <h2>Cash and carry trip list</h2>
+        @if (_tripList.Count == 0)
+        {
+            <p class="page-hint">Nothing needed right now.</p>
+        }
+        else
+        {
+            <div class="report-block">
+                @foreach (var item in _tripList)
+                {
+                    <div class="quote-row">
+                        <span>@item.ProductName (@item.OnHand.ToString("0.###") left)</span>
+                        <span>buy @item.SuggestedQuantity.ToString("0")</span>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_deadStock.Count > 0)
+        {
+            <h2>Not moving</h2>
+            <div class="report-block">
+                @foreach (var item in _deadStock)
+                {
+                    <div class="quote-row">
+                        <span>@item.ProductName</span>
+                        <span>@item.OnHand.ToString("0.###") stuck</span>
+                    </div>
+                }
+            </div>
+            <p class="page-hint">No sales in 30 days. Mark it down or stop buying it.</p>
+        }
     }
 </div>
 
 @code {
     private DateOnly _date = DateOnly.FromDateTime(DateTime.Today);
     private DailySummary? _summary;
+    private IReadOnlyList<ReorderSuggestion> _tripList = [];
+    private IReadOnlyList<DeadStockItem> _deadStock = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -63,5 +98,9 @@
         await ReloadAsync();
     }
 
-    private async Task ReloadAsync() => _summary = await Reports.GetDailySummaryAsync(_date);
+    private async Task ReloadAsync()
+    {
+        _summary = await Reports.GetDailySummaryAsync(_date);
+        (_tripList, _deadStock) = await Reports.GetTripAdviceAsync();
+    }
 }

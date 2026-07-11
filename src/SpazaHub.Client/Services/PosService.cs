@@ -51,6 +51,43 @@ public class PosService
         return (completed, alerts);
     }
 
+    /// <summary>
+    /// Rings up the cart on a customer's book: the whole sale tenders as StoreCredit
+    /// and a linked debit lands in the Makhulu Book ledger. The credit limit warning
+    /// happens in the UI before this is called; the limit is soft by design.
+    /// </summary>
+    public async Task<(CompletedSale Sale, IReadOnlyList<LowStockAlert> Alerts)> CompleteSaleOnBookAsync(
+        IReadOnlyList<CartLine> cart, Guid customerId, Guid? cashierId = null)
+    {
+        var state = await _store.GetStateAsync()
+            ?? throw new InvalidOperationException("Device not set up yet.");
+
+        decimal total = cart.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2, MidpointRounding.AwayFromZero));
+        var completed = SaleBuilder.Build(
+            cart,
+            [new TenderInput(Domain.Enums.PaymentMethod.StoreCredit, total)],
+            cashRoundingIncrement: 0m,
+            state.DeviceId, cashierId, DateTime.UtcNow);
+
+        foreach (var entity in completed.InWriteOrder())
+        {
+            await _store.SaveLocalWriteAsync(entity);
+        }
+
+        await _store.SaveLocalWriteAsync(new Domain.Entities.CreditEntry
+        {
+            CustomerId = customerId,
+            Type = Domain.Enums.CreditEntryType.Debit,
+            Amount = total,
+            SaleId = completed.Sale.Id,
+            CashierId = cashierId,
+            OccurredAtUtc = DateTime.UtcNow
+        });
+
+        var alerts = await ApplyQuantityChangesAsync(completed);
+        return (completed, alerts);
+    }
+
     /// <summary>Voids a sale in full via a compensating sale referencing the original.</summary>
     public async Task<CompletedSale> VoidSaleAsync(Guid saleId, Guid? cashierId = null)
     {

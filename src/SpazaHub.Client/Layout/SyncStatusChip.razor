@@ -1,0 +1,58 @@
+@using SpazaHub.Client.Sync
+@implements IDisposable
+@inject LocalStore Store
+@inject AccessTokenStore Tokens
+@inject SpazaHub.Client.Services.AuthApiClient Auth
+
+<span class="sync-chip @_stateClass">@_label</span>
+
+@code {
+    private string _label = "";
+    private string _stateClass = "";
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _timer = new Timer(async _ => await RefreshAsync(), null,
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(15));
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            if (!Auth.IsSetUp)
+            {
+                _label = "";
+                _stateClass = "";
+            }
+            else
+            {
+                int pending = (await Store.GetPendingItemsAsync(500)).Count;
+                if (pending > 0)
+                {
+                    _label = $"{pending} to sync";
+                    _stateClass = "pending";
+                }
+                else if (Tokens.HasToken)
+                {
+                    _label = "Synced";
+                    _stateClass = "ok";
+                }
+                else
+                {
+                    _label = "On this phone";
+                    _stateClass = "local";
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // Status is cosmetic; never let it crash the shell.
+        }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

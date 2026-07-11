@@ -43,7 +43,7 @@ public class LocalStore
     }
 
     /// <summary>Creates the schema and the sync state row after login on a new device.</summary>
-    public async Task InitializeAsync(Guid tenantId, Guid deviceId)
+    public async Task InitializeAsync(Guid tenantId, Guid deviceId, string? shopName = null)
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
         await EnsureSchemaAsync(db);
@@ -51,7 +51,12 @@ public class LocalStore
         var state = await db.SyncState.FindAsync(SyncClientState.SingletonId);
         if (state is null)
         {
-            db.SyncState.Add(new SyncClientState { TenantId = tenantId, DeviceId = deviceId });
+            db.SyncState.Add(new SyncClientState
+            {
+                TenantId = tenantId,
+                DeviceId = deviceId,
+                ShopName = shopName ?? string.Empty
+            });
             await db.SaveChangesAsync();
         }
 

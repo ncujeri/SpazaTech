@@ -33,6 +33,8 @@ builder.Services.AddSingleton<QuickRingService>();
 builder.Services.AddSingleton<NotificationService>();
 builder.Services.AddScoped<BarcodeScannerService>();
 
+builder.Services.AddSingleton<CustomerService>();
+builder.Services.AddSingleton<StockTakeService>();
 builder.Services.AddSingleton<CashbackService>();
 builder.Services.AddSingleton<CashUpService>();
 builder.Services.AddSingleton<ReportService>();

@@ -8,7 +8,7 @@ namespace SpazaHub.Domain.Entities;
 /// the client reference passed to the SMS provider so delivery webhooks map back without
 /// lookups. Append-only aside from status transitions driven by delivery receipts.
 /// </summary>
-public class CustomerMessage : Entity, ITenantOwned
+public class CustomerMessage : Entity, ITenantOwned, IMutableSynced
 {
     public Guid TenantId { get; set; }
 
@@ -35,4 +35,7 @@ public class CustomerMessage : Entity, ITenantOwned
     public DateTime? DeliveredAtUtc { get; set; }
 
     public string? FailureReason { get; set; }
+
+    /// <summary>LWW timestamp: delivery receipts move the status after creation.</summary>
+    public DateTime UpdatedAtUtc { get; set; }
 }

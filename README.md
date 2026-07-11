@@ -11,17 +11,14 @@ The spec targets .NET 9 with a documented fallback to .NET 8 LTS. This build env
 ```
 SpazaHub.sln
 ├── src/
-│   ├── SpazaHub.Domain            Entities, enums, domain events, no dependencies
-│   ├── SpazaHub.Application       CQRS handlers, validators, ports (IMessagingProvider, IVasProvider, ITenantProvider)
-│   ├── SpazaHub.Infrastructure    EF Core, tenancy plumbing, identity, JWT, dev SMS adapter
-│   ├── SpazaHub.Api               ASP.NET Core minimal API, auth endpoints
-│   ├── SpazaHub.Client            Blazor WASM PWA (POS UI arrives in Phase 3)
-│   └── SpazaHub.Shared            DTOs, role and claim constants shared client/server
-├── tests/
-│   ├── SpazaHub.Domain.Tests
-│   ├── SpazaHub.Application.Tests
-│   └── SpazaHub.Sync.Tests        Sync protocol tests land here in Phase 2
+│   ├── SpazaHub.Shared            Domain entities, enums, pure domain services, sync contracts, DTOs
+│   ├── SpazaHub.Api               ASP.NET Core server: CQRS, EF Core, tenancy, identity, JWT, sync engine
+│   └── SpazaHub.Client            Blazor WebAssembly PWA: POS, local SQLite, outbox, background sync
+└── tests/
+    └── SpazaHub.Tests             One test project covering domain logic, tenancy, sync protocol, and client flows
 ```
+
+Clean Architecture boundaries live on as folders inside SpazaHub.Api (Application/, Infrastructure/) rather than separate assemblies.
 
 ## Build and test
 
@@ -111,6 +108,17 @@ Verified in headless Chromium against the published PWA: open drawer with R500 f
 ## Expiry tracking (added after Phase 4)
 
 Best-before dates are captured per goods-received batch on the stock movement, not as a single field on the product, because different deliveries expire on different dates. `ExpiryEvaluator` (Domain, pure) estimates what is still on the shelf: shops rotate stock oldest-first, so the on-hand quantity is allocated to the newest batches, and a fully sold old batch never warns. This allocation is a warning heuristic only; costing stays weighted average. Batches at or past their date, or within the owner-configurable warning window (`TenantConfig.ExpiryWarningDays`, default 7), surface as a banner on the Products page and a local notification on app open. The batch expiry rides the normal sync payload so every device warns.
+
+## Makhulu Book, stock take, and the trip list
+
+The features that map to how township shops actually run:
+
+- **Makhulu Book (customer credit ledger)**: informal credit is the backbone of spaza trade. Customers have a name, an optional nickname and phone, a soft book limit, and a POPIA consent flag with a capture timestamp. The book is a ledger, never a balance field: what someone owes is always debits minus credits, so two devices can write offline and agree after sync. Payments received in cash flow into the drawer stream so cash-up stays honest.
+- **On the book at the till**: the tender screen has an ON THE BOOK option that completes the sale as StoreCredit and writes a linked debit. Over-limit warns once in plain language; the second tap allows it, because the limit is the owner's judgement call, not the app's.
+- **SMS reminders, tier 1**: a Send reminder button builds an `sms:` deep link that opens the owner's own SMS app with a friendly English or isiZulu message prefilled, always under one GSM-7 segment, only for consented customers with a phone and a balance. Zero cost, no aggregator. Every reminder is recorded as a CustomerMessage.
+- **Stock take with a shrinkage price tag**: walk the shelves biggest-money first, type what you count, and the app writes StockTakeCorrection movements and values the variance at cost. Missing stock finally has a rand number.
+- **Cash-and-carry trip list**: the daily report now ends with what to buy (velocity-based top-up suggestions) and what is not moving (no sale in 30 days), which is the owner's weekly buying decision made for them.
+- **Sync status chip**: the brand bar always shows whether everything reached the server ("Synced"), how much is still local ("48 to sync"), or that the shop is running purely on this phone.
 
 ## Roadmap
 

@@ -10,6 +10,7 @@
 @inject QuickRingService QuickRing
 @inject BarcodeScannerService Scanner
 @inject NotificationService Notifications
+@inject CustomerService Customers
 @inject NavigationManager Nav
 
 <PageTitle>Sell</PageTitle>
@@ -112,6 +113,35 @@ else
                 <button class="big-btn card" @onclick="() => AddFullNonCash(PaymentMethod.Card)">CARD (full)</button>
                 <button class="big-btn sassa" @onclick="() => AddFullNonCash(PaymentMethod.SassaCard)">SASSA (full)</button>
 
+                @if (!_bookMode)
+                {
+                    <button class="big-btn book" @onclick="OpenBookModeAsync" disabled="@(_nonCash.Count > 0)">
+                        ON THE BOOK
+                    </button>
+                }
+                else
+                {
+                    <div class="book-tender">
+                        <select class="big-input" @bind="_bookCustomerId">
+                            <option value="">Whose book?</option>
+                            @foreach (var customer in _bookCustomers)
+                            {
+                                <option value="@customer.Customer.Id">
+                                    @customer.Customer.Name (@(customer.Balance > 0 ? $"owes R {customer.Balance:0.00}" : "paid up"))
+                                </option>
+                            }
+                        </select>
+                        @if (_bookWarning is not null)
+                        {
+                            <p class="error-text">@_bookWarning</p>
+                        }
+                        <button class="big-btn book" @onclick="CompleteOnBookAsync"
+                                disabled="@(string.IsNullOrEmpty(_bookCustomerId))">
+                            Put R @Total.ToString("0.00") on the book
+                        </button>
+                    </div>
+                }
+
                 <div class="split-row">
                     <select class="big-input" @bind="_splitMethod">
                         <option value="@PaymentMethod.Card">Card</option>
@@ -150,6 +180,10 @@ else
     private PaymentMethod _splitMethod = PaymentMethod.Card;
     private decimal _splitAmount;
     private string? _flash;
+    private bool _bookMode;
+    private string? _bookCustomerId;
+    private string? _bookWarning;
+    private IReadOnlyList<CustomerWithBalance> _bookCustomers = [];
 
     private decimal Total => _cart.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
 
@@ -252,6 +286,61 @@ else
     {
         _tendering = false;
         _nonCash.Clear();
+        _bookMode = false;
+        _bookCustomerId = null;
+        _bookWarning = null;
+    }
+
+    private async Task OpenBookModeAsync()
+    {
+        _bookCustomers = (await Customers.ListWithBalancesAsync())
+            .Where(c => c.Customer.IsActive)
+            .ToList();
+        if (_bookCustomers.Count == 0)
+        {
+            _flash = "Add people to the Makhulu Book first.";
+            return;
+        }
+
+        _bookMode = true;
+    }
+
+    private async Task CompleteOnBookAsync()
+    {
+        if (!Guid.TryParse(_bookCustomerId, out Guid customerId))
+        {
+            return;
+        }
+
+        // Soft limit: warn once, second tap goes through.
+        var check = await Customers.CheckLimitAsync(customerId, Total);
+        if (check == SpazaHub.Domain.Services.CreditLimitCheck.OverLimit && _bookWarning is null)
+        {
+            _bookWarning = "Over their book limit. Tap again to allow it anyway.";
+            return;
+        }
+
+        var cartLines = _cart
+            .Select(l => new CartLine(l.ProductId, l.Description, l.Quantity, l.UnitPrice, l.UnitCost))
+            .ToList();
+
+        var (completed, alerts) = await PosSvc.CompleteSaleOnBookAsync(cartLines, customerId);
+
+        _lowStockAlerts = alerts;
+        foreach (var alert in alerts)
+        {
+            await Notifications.NotifyLowStockAsync(alert.Name, alert.QuantityLeft);
+        }
+
+        _cart.Clear();
+        _nonCash.Clear();
+        _tendering = false;
+        _bookMode = false;
+        _bookCustomerId = null;
+        _bookWarning = null;
+        _flash = $"On the book: R {completed.Sale.Total:0.00}";
+        await ReloadQuickRingAsync();
+        StateHasChanged();
     }
 
     private async Task CompleteAsync()

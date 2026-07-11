@@ -1,0 +1,100 @@
+@page "/stocktake"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Services
+@inject AuthApiClient Auth
+@inject StockTakeService StockTakeSvc
+@inject NavigationManager Nav
+
+<PageTitle>Stock take</PageTitle>
+
+<div class="stocktake-page">
+    <h1>Count the stock</h1>
+
+    @if (_result is null)
+    {
+        <p class="page-hint">Walk the shelves, biggest money first. Leave a line empty to skip it.</p>
+
+        <div class="count-list">
+            @foreach (var line in _sheet)
+            {
+                <div class="count-row">
+                    <div class="count-info">
+                        <span class="product-name">@line.ProductName</span>
+                        <span class="product-qty">Book says @line.Expected.ToString("0.###")</span>
+                    </div>
+                    <input class="big-input count-input" type="number" inputmode="decimal" min="0"
+                           placeholder="@line.Expected.ToString("0.###")"
+                           @bind="_counted[line.ProductId]" @bind:event="oninput" />
+                </div>
+            }
+        </div>
+
+        <button class="big-btn charge" @onclick="SubmitAsync" disabled="@(!_counted.Values.Any(v => v is not null))">
+            Save the count
+        </button>
+    }
+    else
+    {
+        @if (!_result.HasVariances)
+        {
+            <div class="cashup-result ok">
+                <div class="quote-row charge"><span>Everything matches</span><span>✓</span></div>
+            </div>
+        }
+        else
+        {
+            <div class="cashup-result @(_result.TotalShrinkageValue > 0 ? "short" : "ok")">
+                <div class="quote-row charge">
+                    <span>Missing stock value</span>
+                    <span>R @_result.TotalShrinkageValue.ToString("0.00")</span>
+                </div>
+            </div>
+
+            <div class="movement-list">
+                @foreach (var variance in _result.Variances)
+                {
+                    <div class="movement-row">
+                        <span>@variance.ProductName: counted @variance.Counted.ToString("0.###"),
+                            book said @variance.Expected.ToString("0.###")</span>
+                        <span class="@(variance.VarianceValue < 0 ? "neg" : "")">
+                            R @variance.VarianceValue.ToString("0.00")</span>
+                    </div>
+                }
+            </div>
+        }
+
+        <button class="big-btn primary" @onclick='() => Nav.NavigateTo("/products")'>Back to stock</button>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<CountSheetLine> _sheet = [];
+    private readonly Dictionary<Guid, decimal?> _counted = [];
+    private StockTakeResult? _result;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        _sheet = await StockTakeSvc.GetCountSheetAsync();
+        foreach (var line in _sheet)
+        {
+            _counted[line.ProductId] = null;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        var counts = _sheet
+            .Where(l => _counted[l.ProductId] is not null)
+            .Select(l => new StockCount(l.ProductId, l.ProductName, l.Expected, _counted[l.ProductId]!.Value, l.UnitCost))
+            .ToList();
+
+        _result = await StockTakeSvc.SubmitAsync(counts);
+    }
+}

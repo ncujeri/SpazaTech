@@ -1,0 +1,217 @@
+@page "/customers"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@using SpazaHub.Domain.Enums
+@inject AuthApiClient Auth
+@inject CustomerService Book
+@inject NavigationManager Nav
+
+<PageTitle>Makhulu Book</PageTitle>
+
+<div class="book-page">
+    <div class="products-header">
+        <h1>Makhulu Book</h1>
+        <button class="big-btn primary" @onclick="NewCustomer">+ Add person</button>
+    </div>
+
+    <p class="book-total">Owed to the shop: <strong>R @TotalOwed.ToString("0.00")</strong></p>
+
+    @if (_editing is not null)
+    {
+        <div class="product-form">
+            <label class="big-label">Name</label>
+            <input class="big-input" @bind="_editing.Name" />
+
+            <label class="big-label">Nickname (what everyone calls them)</label>
+            <input class="big-input" @bind="_editing.Nickname" />
+
+            <label class="big-label">Cellphone (optional)</label>
+            <input class="big-input" type="tel" inputmode="tel" @bind="_editing.Phone" />
+
+            <label class="big-label">Book limit (R, 0 = no limit)</label>
+            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_editing.CreditLimit" />
+
+            <label class="consent-row">
+                <input type="checkbox" @bind="_editing.ReminderConsent" />
+                <span>They agree to SMS reminders about their book (POPIA consent)</span>
+            </label>
+
+            <div class="form-actions">
+                <button class="big-btn primary" @onclick="SaveCustomerAsync">Save</button>
+                <button class="big-btn" @onclick="() => _editing = null">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <div class="customer-list">
+        @foreach (var item in _customers)
+        {
+            <div class="customer-row">
+                <div class="customer-main" @onclick="() => ToggleDetailAsync(item.Customer.Id)">
+                    <span class="customer-name">
+                        @item.Customer.Name
+                        @if (!string.IsNullOrEmpty(item.Customer.Nickname))
+                        {
+                            <span class="customer-nick">(@item.Customer.Nickname)</span>
+                        }
+                    </span>
+                    <span class="customer-balance @(item.Balance > 0 ? "owing" : "")">
+                        @(item.Balance > 0 ? $"Owes R {item.Balance:0.00}" : "Paid up")
+                    </span>
+                </div>
+
+                @if (_openCustomerId == item.Customer.Id)
+                {
+                    <div class="customer-detail">
+                        <div class="split-row">
+                            <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0"
+                                   placeholder="Amount" @bind="_amount" />
+                        </div>
+                        <div class="form-actions">
+                            <button class="big-btn small" @onclick="() => ChargeAsync(item.Customer.Id)">On the book</button>
+                            <button class="big-btn small pay" @onclick="() => PayAsync(item.Customer.Id)">Paid cash</button>
+                            @if (_reminderLink is not null)
+                            {
+                                <a class="big-btn small remind" href="@_reminderLink">Send reminder</a>
+                            }
+                            else
+                            {
+                                <button class="big-btn small" @onclick="() => BuildReminderAsync(item.Customer.Id)"
+                                        disabled="@(item.Balance <= 0 || string.IsNullOrEmpty(item.Customer.Phone) || !item.Customer.ReminderConsent)">
+                                    Reminder SMS
+                                </button>
+                            }
+                        </div>
+
+                        @if (_limitWarning is not null)
+                        {
+                            <p class="error-text">@_limitWarning</p>
+                        }
+
+                        <div class="movement-list">
+                            @foreach (var entry in _ledger)
+                            {
+                                <div class="movement-row">
+                                    <span>@entry.OccurredAtUtc.ToLocalTime().ToString("dd MMM HH:mm")
+                                        @(entry.Type == CreditEntryType.Debit ? "On book" : "Paid")</span>
+                                    <span class="@(entry.Type == CreditEntryType.Debit ? "neg" : "")">
+                                        R @entry.Amount.ToString("0.00")</span>
+                                </div>
+                            }
+                        </div>
+
+                        <button class="big-btn small" @onclick="() => Edit(item.Customer)">Edit person</button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<CustomerWithBalance> _customers = [];
+    private IReadOnlyList<CreditEntry> _ledger = [];
+    private Customer? _editing;
+    private Guid? _openCustomerId;
+    private decimal _amount;
+    private string? _reminderLink;
+    private string? _limitWarning;
+
+    private decimal TotalOwed => _customers.Where(c => c.Balance > 0).Sum(c => c.Balance);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => _customers = await Book.ListWithBalancesAsync();
+
+    private void NewCustomer() => _editing = new Customer();
+
+    private void Edit(Customer customer) => _editing = new Customer
+    {
+        Id = customer.Id,
+        Name = customer.Name,
+        Nickname = customer.Nickname,
+        Phone = customer.Phone,
+        CreditLimit = customer.CreditLimit,
+        ReminderConsent = customer.ReminderConsent,
+        ConsentCapturedAtUtc = customer.ConsentCapturedAtUtc,
+        IsActive = customer.IsActive,
+        CreatedAtUtc = customer.CreatedAtUtc
+    };
+
+    private async Task SaveCustomerAsync()
+    {
+        if (_editing is null || string.IsNullOrWhiteSpace(_editing.Name))
+        {
+            return;
+        }
+
+        await Book.SaveCustomerAsync(_editing);
+        _editing = null;
+        await ReloadAsync();
+    }
+
+    private async Task ToggleDetailAsync(Guid customerId)
+    {
+        _reminderLink = null;
+        _limitWarning = null;
+        _amount = 0m;
+        if (_openCustomerId == customerId)
+        {
+            _openCustomerId = null;
+            return;
+        }
+
+        _openCustomerId = customerId;
+        _ledger = await Book.GetLedgerAsync(customerId);
+    }
+
+    private async Task ChargeAsync(Guid customerId)
+    {
+        if (_amount <= 0m)
+        {
+            return;
+        }
+
+        var check = await Book.CheckLimitAsync(customerId, _amount);
+        if (check == SpazaHub.Domain.Services.CreditLimitCheck.OverLimit && _limitWarning is null)
+        {
+            _limitWarning = "This puts them over their book limit. Tap On the book again to allow it.";
+            return;
+        }
+
+        await Book.ChargeToBookAsync(customerId, _amount, note: "Added at counter");
+        _limitWarning = null;
+        _amount = 0m;
+        _ledger = await Book.GetLedgerAsync(customerId);
+        await ReloadAsync();
+    }
+
+    private async Task PayAsync(Guid customerId)
+    {
+        if (_amount <= 0m)
+        {
+            return;
+        }
+
+        await Book.ReceivePaymentAsync(customerId, _amount);
+        _amount = 0m;
+        _ledger = await Book.GetLedgerAsync(customerId);
+        await ReloadAsync();
+    }
+
+    private async Task BuildReminderAsync(Guid customerId)
+    {
+        _reminderLink = await Book.BuildReminderLinkAsync(customerId);
+        StateHasChanged();
+    }
+}

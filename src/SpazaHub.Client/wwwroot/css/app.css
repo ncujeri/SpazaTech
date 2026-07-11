@@ -527,3 +527,80 @@ h2 { font-size: 1.05rem; margin: 18px 0 8px; color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
     .big-btn:active, .qty-btn:active, .quick-btn:active { transform: none; }
 }
+
+/* Makhulu Book, stock take, sync chip */
+
+.brand-bar { display: flex; justify-content: space-between; align-items: center; }
+
+.sync-chip {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    border-radius: 999px;
+    padding: 3px 10px;
+    border: 2px solid transparent;
+}
+.sync-chip.ok { color: #8fdd9f; border-color: #8fdd9f; }
+.sync-chip.pending { color: var(--brand); border-color: var(--brand); }
+.sync-chip.local { color: #98a3b1; border-color: #98a3b1; }
+
+.book-total { font-size: 1.05rem; }
+.book-total strong { font-family: var(--display); color: var(--red); }
+
+.customer-row { border-bottom: 1px solid var(--line); }
+
+.customer-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 2px;
+    cursor: pointer;
+    min-height: 48px;
+}
+
+.customer-name { font-weight: 800; font-size: 1.05rem; }
+.customer-nick { font-weight: 600; color: var(--ink-soft); }
+.customer-balance { font-weight: 700; color: var(--green-deep); font-variant-numeric: tabular-nums; }
+.customer-balance.owing { color: var(--red); }
+
+.customer-detail {
+    background: var(--card);
+    border: var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin: 0 0 12px;
+}
+
+.consent-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 14px 0 4px;
+    font-weight: 600;
+}
+.consent-row input { width: 26px; height: 26px; margin-top: 2px; }
+
+.big-btn.pay { background: var(--green); border-color: var(--green-deep); color: #fff; box-shadow: 0 2px 0 var(--green-deep); }
+.big-btn.remind, a.big-btn.remind {
+    background: var(--brand); border-color: var(--brand-ink); color: var(--brand-ink);
+    box-shadow: 0 2px 0 var(--brand-ink);
+    display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+}
+.big-btn.book { background: var(--ink); border-color: #000; color: var(--brand); box-shadow: 0 2px 0 #000; }
+.book-tender { margin-top: 4px; }
+
+.page-hint { color: var(--ink-soft); font-size: 0.95rem; }
+
+.header-actions { display: flex; gap: 6px; align-items: center; }
+
+.count-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+}
+.count-info { display: flex; flex-direction: column; flex: 1; }
+.count-input { width: 110px; text-align: center; margin: 0; }

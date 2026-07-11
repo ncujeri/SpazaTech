@@ -11,7 +11,10 @@
 <div class="products-page">
     <div class="products-header">
         <h1>Products</h1>
-        <button class="big-btn primary" @onclick="NewProduct">+ New product</button>
+        <div class="header-actions">
+            <button class="big-btn small" @onclick='() => Nav.NavigateTo("/stocktake")'>Count stock</button>
+            <button class="big-btn primary" @onclick="NewProduct">+ New product</button>
+        </div>
     </div>
 
     @if (_expiryAlerts.Count > 0)

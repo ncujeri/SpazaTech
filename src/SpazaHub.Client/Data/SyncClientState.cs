@@ -19,4 +19,7 @@ public class SyncClientState
 
     /// <summary>Next outbox sequence to assign. Monotonic per device.</summary>
     public long NextSequence { get; set; } = 1;
+
+    /// <summary>Shop name for receipts and reminder messages.</summary>
+    public string ShopName { get; set; } = string.Empty;
 }

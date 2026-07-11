@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SpazaHub.Client.Data;
 using SpazaHub.Domain.Entities;
+using SpazaHub.Domain.Enums;
 using SpazaHub.Domain.Services;
 
 namespace SpazaHub.Client.Services;
@@ -49,5 +50,37 @@ public class ReportService
 
         return DailyReportCalculator.Build(
             tradingDate, sales, lines, payments, cashbacks, fees, movements);
+    }
+
+    /// <summary>
+    /// The cash-and-carry trip list plus dead stock, from local sales velocity over
+    /// the trailing window.
+    /// </summary>
+    public async Task<(IReadOnlyList<ReorderSuggestion> TripList, IReadOnlyList<DeadStockItem> DeadStock)>
+        GetTripAdviceAsync(int windowDays = 14, int daysToCover = 7, int deadAfterDays = 30)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+
+        var products = await db.Products.AsNoTracking().Where(p => p.IsActive).ToListAsync();
+        DateTime windowStart = DateTime.UtcNow.AddDays(-windowDays);
+
+        // Sale movements carry negative quantities; aggregate in memory for SQLite.
+        var saleMovements = await db.StockMovements.AsNoTracking()
+            .Where(m => m.Type == StockMovementType.Sale)
+            .Select(m => new { m.ProductId, m.Quantity, m.OccurredAtUtc })
+            .ToListAsync();
+
+        var activity = products.Select(p =>
+        {
+            var mine = saleMovements.Where(m => m.ProductId == p.Id).ToList();
+            decimal soldInWindow = -mine.Where(m => m.OccurredAtUtc >= windowStart).Sum(m => m.Quantity);
+            DateTime? lastSale = mine.Count > 0 ? mine.Max(m => m.OccurredAtUtc) : null;
+            return new ProductActivity(
+                p.Id, p.Name, p.CachedQuantity, p.LowStockThreshold, soldInWindow, windowDays, lastSale);
+        }).ToList();
+
+        return (
+            ReorderAdvisor.BuildTripList(activity, daysToCover),
+            ReorderAdvisor.FindDeadStock(activity, DateTime.UtcNow, deadAfterDays));
     }
 }
