@@ -1,4 +1,4 @@
-using SpazaHub.Application.Common.Interfaces;
+using SpazaHub.Api.Common.Interfaces;
 using SpazaHub.Shared.Auth;
 
 namespace SpazaHub.Api.Auth;

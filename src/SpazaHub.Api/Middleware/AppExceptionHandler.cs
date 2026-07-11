@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using SpazaHub.Application.Common.Exceptions;
+using SpazaHub.Api.Common.Exceptions;
 
 namespace SpazaHub.Api.Middleware;
 

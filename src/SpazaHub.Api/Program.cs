@@ -5,10 +5,9 @@ using Microsoft.IdentityModel.Tokens;
 using SpazaHub.Api.Auth;
 using SpazaHub.Api.Endpoints;
 using SpazaHub.Api.Middleware;
-using SpazaHub.Application;
-using SpazaHub.Application.Common.Interfaces;
-using SpazaHub.Infrastructure;
-using SpazaHub.Infrastructure.Persistence;
+using SpazaHub.Api;
+using SpazaHub.Api.Common.Interfaces;
+using SpazaHub.Api.Persistence;
 using SpazaHub.Shared.Auth;
 
 var builder = WebApplication.CreateBuilder(args);

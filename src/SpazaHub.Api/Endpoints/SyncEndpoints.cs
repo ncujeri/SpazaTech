@@ -1,5 +1,5 @@
 using MediatR;
-using SpazaHub.Application.Sync;
+using SpazaHub.Api.Sync;
 using SpazaHub.Shared.Sync;
 
 namespace SpazaHub.Api.Endpoints;

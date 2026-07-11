@@ -19,7 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SpazaHub.Shared\SpazaHub.Shared.csproj" />
-    <ProjectReference Include="..\SpazaHub.Application\SpazaHub.Application.csproj" />
   </ItemGroup>
 
 </Project>

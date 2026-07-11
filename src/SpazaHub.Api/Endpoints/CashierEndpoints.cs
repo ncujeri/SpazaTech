@@ -1,5 +1,5 @@
 using MediatR;
-using SpazaHub.Application.Auth;
+using SpazaHub.Api.Auth;
 using SpazaHub.Shared.Auth;
 
 namespace SpazaHub.Api.Endpoints;

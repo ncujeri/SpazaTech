@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using SpazaHub.Application.Sync;
 using SpazaHub.Client.Data;
 using SpazaHub.Domain.Common;
 using SpazaHub.Domain.Entities;
