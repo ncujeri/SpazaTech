@@ -26,6 +26,8 @@ builder.Services.AddSingleton<LocalStore>();
 builder.Services.AddSingleton<SyncApiClient>();
 builder.Services.AddSingleton<BackgroundSyncService>();
 
+builder.Services.AddSingleton<TokenStorage>();
+builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<AuthApiClient>();
 builder.Services.AddSingleton<PosService>();
 builder.Services.AddSingleton<InventoryService>();

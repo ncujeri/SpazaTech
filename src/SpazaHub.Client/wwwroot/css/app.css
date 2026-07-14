@@ -604,3 +604,51 @@ h2 { font-size: 1.05rem; margin: 18px 0 8px; color: var(--ink); }
 }
 .count-info { display: flex; flex-direction: column; flex: 1; }
 .count-input { width: 110px; text-align: center; margin: 0; }
+
+/* Shift and PIN keypad */
+.brand-right { display: flex; gap: 8px; align-items: center; }
+
+.shift-chip {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    border-radius: 999px;
+    padding: 3px 10px;
+    border: 2px solid var(--brand);
+    background: transparent;
+    color: var(--brand);
+    cursor: pointer;
+}
+
+.shift-page { max-width: 440px; margin: 0 auto; }
+.shift-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 12px 0; }
+
+.pin-for { font-size: 1.15rem; }
+.pin-dots { display: flex; gap: 14px; justify-content: center; margin: 18px 0; }
+.pin-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 3px solid var(--ink); background: transparent;
+}
+.pin-dot.filled { background: var(--ink); }
+
+.keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    max-width: 320px;
+    margin: 0 auto;
+}
+.key {
+    min-height: 64px;
+    font-size: 1.6rem;
+    font-weight: 800;
+    border: var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: 0 2px 0 var(--ink);
+    cursor: pointer;
+}
+.key:active { transform: translateY(2px); box-shadow: none; }
+.key.ghost { background: var(--paper); }
+
+.big-input.otp-small { letter-spacing: 0.4em; text-align: center; }

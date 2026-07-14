@@ -12,7 +12,8 @@ public static class AuthEndpoints
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
         group.MapPost("/register-owner", async (RegisterOwnerRequest request, ISender sender, CancellationToken ct)
-            => Results.Ok(await sender.Send(new RegisterOwnerCommand(request.Phone, request.ShopName), ct)));
+            => Results.Ok(await sender.Send(new RegisterOwnerCommand(request.Phone, request.ShopName), ct)))
+            .RequireRateLimiting("otp");
 
         group.MapPost("/verify-otp", async (VerifyOtpRequest request, ISender sender, CancellationToken ct)
             => Results.Ok(await sender.Send(new VerifyOtpCommand(request.Phone, request.Code, request.DeviceName), ct)));

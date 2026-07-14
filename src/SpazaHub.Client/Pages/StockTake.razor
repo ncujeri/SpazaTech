@@ -3,6 +3,7 @@
 @using SpazaHub.Domain.Services
 @inject AuthApiClient Auth
 @inject StockTakeService StockTakeSvc
+@inject SessionService Session
 @inject NavigationManager Nav
 
 <PageTitle>Stock take</PageTitle>
@@ -78,6 +79,13 @@
         if (!Auth.IsSetUp)
         {
             Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        if (!Session.IsOwner)
+        {
+            Nav.NavigateTo("/pos");
             return;
         }
 

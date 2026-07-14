@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace SpazaHub.Api.Auth;
+namespace SpazaHub.Shared.Auth;
 
 /// <summary>
 /// PBKDF2-SHA256 hashing for cashier PINs and OTP codes. Format:

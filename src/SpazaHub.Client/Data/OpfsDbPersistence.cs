@@ -42,6 +42,13 @@ public class OpfsDbPersistence : IAsyncDisposable
             if (bytes is { Length: > 0 })
             {
                 await File.WriteAllBytesAsync(DatabaseFileName, bytes);
+
+                byte[]? walBytes = await _module.InvokeAsync<byte[]?>("load", DatabaseFileName + "-wal");
+                if (walBytes is { Length: > 0 })
+                {
+                    await File.WriteAllBytesAsync(DatabaseFileName + "-wal", walBytes);
+                }
+
                 _logger.LogInformation("Restored local database from OPFS ({Bytes} bytes).", bytes.Length);
             }
         }
@@ -52,7 +59,11 @@ public class OpfsDbPersistence : IAsyncDisposable
         }
     }
 
-    /// <summary>Copies the current database file into OPFS. Called after local commits.</summary>
+    /// <summary>
+    /// Copies the database into OPFS after commits. The WAL side file is included
+    /// defensively: the store runs on the rollback journal, but a copy taken during
+    /// the journal-mode transition must never lose committed rows.
+    /// </summary>
     public async Task SaveAsync()
     {
         if (!_available || _module is null || !File.Exists(DatabaseFileName))
@@ -64,6 +75,13 @@ public class OpfsDbPersistence : IAsyncDisposable
         {
             byte[] bytes = await File.ReadAllBytesAsync(DatabaseFileName);
             await _module.InvokeAsync<bool>("save", DatabaseFileName, bytes);
+
+            string walFile = DatabaseFileName + "-wal";
+            if (File.Exists(walFile))
+            {
+                byte[] walBytes = await File.ReadAllBytesAsync(walFile);
+                await _module.InvokeAsync<bool>("save", walFile, walBytes);
+            }
         }
         catch (Exception ex)
         {

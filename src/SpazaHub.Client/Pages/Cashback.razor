@@ -4,6 +4,7 @@
 @using SpazaHub.Domain.Services
 @inject AuthApiClient Auth
 @inject CashbackService CashbackSvc
+@inject SessionService Session
 @inject NavigationManager Nav
 
 <PageTitle>Cashback</PageTitle>
@@ -77,18 +78,18 @@
         }
 
         _quote = await CashbackSvc.GetQuoteAsync(_amount);
-        _denial = await CashbackSvc.CheckAsync(_amount, PaymentMethod.Card);
+        _denial = await CashbackSvc.CheckAsync(_amount, PaymentMethod.Card, Session.CurrentCashierId);
     }
 
     private async Task CompleteAsync(PaymentMethod method)
     {
-        _denial = await CashbackSvc.CheckAsync(_amount, method);
+        _denial = await CashbackSvc.CheckAsync(_amount, method, Session.CurrentCashierId);
         if (_denial != CashbackDenialReason.None)
         {
             return;
         }
 
-        _done = await CashbackSvc.CompleteCashbackAsync(_amount, method);
+        _done = await CashbackSvc.CompleteCashbackAsync(_amount, method, Session.CurrentCashierId);
     }
 
     private void Reset()

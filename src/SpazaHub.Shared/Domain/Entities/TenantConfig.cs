@@ -41,5 +41,11 @@ public class TenantConfig : Entity, ITenantOwned, IMutableSynced
     /// <summary>Days ahead of a batch expiry date at which the warning starts firing.</summary>
     public int ExpiryWarningDays { get; set; } = 7;
 
+    /// <summary>
+    /// PBKDF2 hash of the owner's 4-digit PIN, used to switch a device back from a
+    /// cashier shift to owner mode. Null means no owner PIN is set yet.
+    /// </summary>
+    public string? OwnerPinHash { get; set; }
+
     public DateTime UpdatedAtUtc { get; set; }
 }

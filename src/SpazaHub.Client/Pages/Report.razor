@@ -4,6 +4,7 @@
 @inject AuthApiClient Auth
 @inject ReportService Reports
 @inject CashUpService CashUpSvc
+@inject SessionService Session
 @inject NavigationManager Nav
 
 <PageTitle>Daily report</PageTitle>
@@ -91,6 +92,13 @@
         if (!Auth.IsSetUp)
         {
             Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        if (!Session.IsOwner)
+        {
+            Nav.NavigateTo("/pos");
             return;
         }
 

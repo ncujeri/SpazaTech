@@ -38,6 +38,11 @@ public class LocalStore
         if (!_schemaEnsured)
         {
             await db.Database.EnsureCreatedAsync();
+
+            // Microsoft.Data.Sqlite defaults new databases to WAL, which leaves the
+            // data in a -wal side file. OPFS persistence copies the main file, so
+            // fold everything into it and stay on the rollback journal.
+            await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=DELETE;");
             _schemaEnsured = true;
         }
     }

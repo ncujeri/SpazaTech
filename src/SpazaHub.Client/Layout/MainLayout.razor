@@ -1,9 +1,18 @@
 @inherits LayoutComponentBase
+@using SpazaHub.Client.Services
+@implements IDisposable
+@inject SessionService Session
+@inject NavigationManager Nav
 
 <div class="app-shell">
     <header class="brand-bar">
         <span class="brand-mark">Spaza<span class="brand-hub">Hub</span></span>
-        <SyncStatusChip />
+        <span class="brand-right">
+            <button class="shift-chip" @onclick='() => Nav.NavigateTo("/shift")'>
+                @(Session.IsOwner ? "Owner" : Session.Current.CashierName)
+            </button>
+            <SyncStatusChip />
+        </span>
     </header>
 
     <main class="app-main">
@@ -27,13 +36,28 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-2-1.6-4.6-2-8-2v16c3.4 0 6 .4 8 2 2-1.6 4.6-2 8-2V3c-3.4 0-6 .4-8 2z M12 5v16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             <span>Book</span>
         </NavLink>
-        <NavLink class="tab" href="report">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10 M12 20V4 M19 20v-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-            <span>Report</span>
-        </NavLink>
+        @if (Session.IsOwner)
+        {
+            <NavLink class="tab" href="report">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10 M12 20V4 M19 20v-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+                <span>Report</span>
+            </NavLink>
+        }
         <NavLink class="tab" href="products">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v10l-8 4-8-4V7z M12 3v18 M4 7l8 4 8-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             <span>Stock</span>
         </NavLink>
     </nav>
 </div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Session.ShiftChanged += OnShiftChanged;
+        await Session.RestoreAsync();
+    }
+
+    private void OnShiftChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Session.ShiftChanged -= OnShiftChanged;
+}

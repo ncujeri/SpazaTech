@@ -6,6 +6,8 @@ using SpazaHub.Api.Common.Interfaces;
 using SpazaHub.Api.Sync;
 using SpazaHub.Api.Auth;
 using SpazaHub.Api.Identity;
+using Polly;
+using Polly.Extensions.Http;
 using SpazaHub.Api.Messaging;
 using SpazaHub.Api.Persistence;
 
@@ -65,7 +67,22 @@ public static class InfrastructureServiceRegistration
 
         services.AddScoped<JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
-        services.AddScoped<IMessagingProvider, DevLogSmsProvider>();
+        // SMS: SMSFlow in production, the logging dev provider until it is configured.
+        services.AddOptions<SmsFlowOptions>().Bind(configuration.GetSection(SmsFlowOptions.SectionName));
+        services.AddScoped<SmsWebhookService>();
+
+        if (string.Equals(configuration["Messaging:Provider"], "SmsFlow", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<IMessagingProvider, SmsFlowProvider>()
+                .AddPolicyHandler(HttpPolicyExtensions
+                    .HandleTransientHttpError()
+                    .OrResult(r => r.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    .WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt))));
+        }
+        else
+        {
+            services.AddScoped<IMessagingProvider, DevLogSmsProvider>();
+        }
         services.AddScoped<ISyncService, SyncService>();
 
         return services;

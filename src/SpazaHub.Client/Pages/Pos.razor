@@ -11,6 +11,7 @@
 @inject BarcodeScannerService Scanner
 @inject NotificationService Notifications
 @inject CustomerService Customers
+@inject SessionService Session
 @inject NavigationManager Nav
 
 <PageTitle>Sell</PageTitle>
@@ -324,7 +325,7 @@ else
             .Select(l => new CartLine(l.ProductId, l.Description, l.Quantity, l.UnitPrice, l.UnitCost))
             .ToList();
 
-        var (completed, alerts) = await PosSvc.CompleteSaleOnBookAsync(cartLines, customerId);
+        var (completed, alerts) = await PosSvc.CompleteSaleOnBookAsync(cartLines, customerId, Session.CurrentCashierId);
 
         _lowStockAlerts = alerts;
         foreach (var alert in alerts)
@@ -349,7 +350,7 @@ else
             .Select(l => new CartLine(l.ProductId, l.Description, l.Quantity, l.UnitPrice, l.UnitCost))
             .ToList();
 
-        var (completed, alerts) = await PosSvc.CompleteSaleAsync(cartLines, _nonCash.ToList());
+        var (completed, alerts) = await PosSvc.CompleteSaleAsync(cartLines, _nonCash.ToList(), Session.CurrentCashierId);
 
         _lowStockAlerts = alerts;
         foreach (var alert in alerts)

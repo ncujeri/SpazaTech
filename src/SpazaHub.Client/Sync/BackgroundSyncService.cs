@@ -1,3 +1,5 @@
+using System.Net;
+using SpazaHub.Client.Services;
 using SpazaHub.Shared.Sync;
 
 namespace SpazaHub.Client.Sync;
@@ -16,16 +18,19 @@ public class BackgroundSyncService : IAsyncDisposable
     private readonly LocalStore _store;
     private readonly SyncApiClient _api;
     private readonly AccessTokenStore _tokens;
+    private readonly AuthApiClient _auth;
     private readonly ILogger<BackgroundSyncService> _logger;
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
 
     public BackgroundSyncService(
-        LocalStore store, SyncApiClient api, AccessTokenStore tokens, ILogger<BackgroundSyncService> logger)
+        LocalStore store, SyncApiClient api, AccessTokenStore tokens, AuthApiClient auth,
+        ILogger<BackgroundSyncService> logger)
     {
         _store = store;
         _api = api;
         _tokens = tokens;
+        _auth = auth;
         _logger = logger;
     }
 
@@ -110,6 +115,11 @@ public class BackgroundSyncService : IAsyncDisposable
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // The hourly access token expired mid-loop: refresh and let the next tick retry.
+            await _auth.RefreshAccessTokenAsync();
         }
         catch (Exception ex)
         {

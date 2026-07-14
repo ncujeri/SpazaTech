@@ -33,23 +33,28 @@ public class CashbackService
 
     /// <summary>Runs every control and reports why a cashback would be refused.</summary>
     public async Task<CashbackDenialReason> CheckAsync(
-        decimal cashOut, PaymentMethod method, Cashier? cashier = null)
+        decimal cashOut, PaymentMethod method, Guid? cashierId = null)
     {
-        var context = await BuildContextAsync(cashier);
+        var context = await BuildContextAsync(await ResolveCashierAsync(cashierId));
         return CashbackBuilder.Check(cashOut, method, context);
+    }
+
+    private async Task<Cashier?> ResolveCashierAsync(Guid? cashierId)
+    {
+        if (cashierId is null)
+        {
+            return null;
+        }
+
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        return await db.Cashiers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == cashierId);
     }
 
     /// <summary>Completes the cashback and writes its event stream through the outbox.</summary>
     public async Task<CashbackEvents> CompleteCashbackAsync(
         decimal cashOut, PaymentMethod method, Guid? cashierId = null, Guid? customerId = null)
     {
-        Cashier? cashier = null;
-        if (cashierId is not null)
-        {
-            await using var db = await _contextFactory.CreateDbContextAsync();
-            cashier = await db.Cashiers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == cashierId);
-        }
-
+        var cashier = await ResolveCashierAsync(cashierId);
         var context = await BuildContextAsync(cashier);
         var events = CashbackBuilder.Build(
             cashOut, method, context, cashierId ?? Guid.Empty, DateTime.UtcNow, saleId: null, customerId);

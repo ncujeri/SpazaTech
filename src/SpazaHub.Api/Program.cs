@@ -49,6 +49,20 @@ builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// OTP requests cost real SMS money: throttle per client address.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("otp", context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10)
+            }));
+});
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
@@ -68,6 +82,8 @@ if (app.Environment.IsDevelopment())
     }
 }
 
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -76,5 +92,6 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" })).WithTags("Health"
 app.MapAuthEndpoints();
 app.MapCashierEndpoints();
 app.MapSyncEndpoints();
+app.MapWebhookEndpoints();
 
 app.Run();

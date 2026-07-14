@@ -120,6 +120,15 @@ The features that map to how township shops actually run:
 - **Cash-and-carry trip list**: the daily report now ends with what to buy (velocity-based top-up suggestions) and what is not moving (no sale in 30 days), which is the owner's weekly buying decision made for them.
 - **Sync status chip**: the brand bar always shows whether everything reached the server ("Synced"), how much is still local ("48 to sync"), or that the shop is running purely on this phone.
 
+## Production hardening round one
+
+- **Sessions survive reloads.** The device refresh token, tenant, device, and shop name persist in localStorage; on boot the app restores them and exchanges the refresh token for a fresh access token when there is signal. The sync loop self-heals when the hourly access token expires, and a server-side revocation cleanly pauses sync while the shop keeps trading locally.
+- **Cashier shift login, fully offline.** The shift screen lists cashiers as big buttons with a PIN keypad; PINs verify locally against the synced PBKDF2 hash, so shift changes need zero signal. Owners add cashiers on the device. Switching back to owner mode requires the owner PIN (stored hashed on tenant config, synced LWW). Five wrong PINs back off for two minutes.
+- **Roles are enforced on-screen now.** Cashiers never see the Report tab (or the page, even by URL), the trip list, cost prices on receiving, or the stock take. Sales, book debits, cashbacks, and cash-ups are stamped with the cashier who did them, and the cashback permission flag is enforced through the same path the till uses.
+- **Real SMS delivery.** SMSFlow (smsflow.co.za) adapter behind IMessagingProvider: typed HttpClient with Polly exponential backoff, selected by Messaging:Provider config (the logging dev provider remains the default until an API key is configured). Delivery receipts and inbound STOP replies arrive on secret-protected webhooks; STOP withdraws POPIA consent everywhere that phone number appears, and every status change flows back to devices through the normal change log.
+- **OTP endpoint rate limiting**: five requests per ten minutes per address, because every OTP costs real SMS money.
+- **Critical persistence bug fixed.** Microsoft.Data.Sqlite defaults new databases to WAL journal mode, so committed rows lived in a side file the OPFS copy never included: local data silently vanished on every reload. The store now forces the rollback journal at schema creation (and copies the WAL file defensively). Verified in the browser: the full database (172KB) survives reload, where before only an empty 4KB page came back.
+
 ## Roadmap
 
 1. Foundation (done)

@@ -4,6 +4,7 @@
 @using SpazaHub.Domain.Enums
 @inject AuthApiClient Auth
 @inject InventoryService Inventory
+@inject SessionService Session
 @inject NavigationManager Nav
 
 <PageTitle>Products</PageTitle>
@@ -12,7 +13,10 @@
     <div class="products-header">
         <h1>Products</h1>
         <div class="header-actions">
-            <button class="big-btn small" @onclick='() => Nav.NavigateTo("/stocktake")'>Count stock</button>
+            @if (Session.IsOwner)
+            {
+                <button class="big-btn small" @onclick='() => Nav.NavigateTo("/stocktake")'>Count stock</button>
+            }
             <button class="big-btn primary" @onclick="NewProduct">+ New product</button>
         </div>
     </div>
@@ -87,7 +91,10 @@
                     <span class="product-qty">@product.CachedQuantity.ToString("0.###") in stock</span>
                 </div>
                 <div class="product-actions">
-                    <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.GoodsReceived)">Receive</button>
+                    @if (Session.IsOwner)
+                    {
+                        <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.GoodsReceived)">Receive</button>
+                    }
                     <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.Wastage)">Waste</button>
                 </div>
             </div>
