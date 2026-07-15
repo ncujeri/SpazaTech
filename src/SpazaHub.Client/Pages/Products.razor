@@ -21,6 +21,17 @@
         </div>
     </div>
 
+    <input class="big-input" type="search" placeholder="Search name or barcode"
+           @bind="_search" @bind:event="oninput" />
+
+    @if (_undoWaste is not null)
+    {
+        <div class="undo-banner">
+            <span>Threw away @_undoWaste.Value.Quantity.ToString("0.###") × @_undoWaste.Value.Name</span>
+            <button class="big-btn small" @onclick="UndoWasteAsync">UNDO</button>
+        </div>
+    }
+
     @if (_expiryAlerts.Count > 0)
     {
         <div class="expiry-banner">
@@ -63,7 +74,7 @@
             <h2>@_stockActionTitle: @_stockProduct!.Name</h2>
 
             <label class="big-label">Quantity</label>
-            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_stockQty" />
+            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_stockQty" @bind:event="oninput" />
 
             @if (_stockAction == StockMovementType.GoodsReceived)
             {
@@ -75,14 +86,28 @@
             }
 
             <div class="form-actions">
-                <button class="big-btn primary" @onclick="ApplyStockActionAsync">Save</button>
-                <button class="big-btn" @onclick="() => _stockAction = null">Cancel</button>
+                @if (_stockAction == StockMovementType.Wastage && !_confirmingWaste)
+                {
+                    <button class="big-btn primary" @onclick="() => _confirmingWaste = true"
+                            disabled="@(_stockQty <= 0)">Save</button>
+                }
+                else if (_stockAction == StockMovementType.Wastage)
+                {
+                    <button class="big-btn danger" @onclick="ApplyStockActionAsync">
+                        Throw away @_stockQty.ToString("0.###")? Tap to confirm
+                    </button>
+                }
+                else
+                {
+                    <button class="big-btn primary" @onclick="ApplyStockActionAsync">Save</button>
+                }
+                <button class="big-btn" @onclick="CancelStockAction">Cancel</button>
             </div>
         </div>
     }
 
     <div class="product-list">
-        @foreach (var product in _products)
+        @foreach (var product in VisibleProducts)
         {
             <div class="product-row @(product.LowStockThreshold > 0 && product.CachedQuantity <= product.LowStockThreshold ? "low" : "")">
                 <div class="product-main" @onclick="() => Edit(product)">
@@ -111,6 +136,16 @@
     private decimal _stockQty;
     private decimal _stockCost;
     private DateOnly? _stockExpiry;
+    private string _search = string.Empty;
+    private bool _confirmingWaste;
+    private (Guid ProductId, string Name, decimal Quantity)? _undoWaste;
+
+    private IEnumerable<Product> VisibleProducts
+        => _search.Length == 0
+            ? _products
+            : _products.Where(p =>
+                p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || (p.Barcode is not null && p.Barcode.StartsWith(_search, StringComparison.OrdinalIgnoreCase)));
 
     private string _stockActionTitle => _stockAction == StockMovementType.GoodsReceived ? "Receive stock" : "Record wastage";
 
@@ -166,6 +201,26 @@
         _stockQty = 0m;
         _stockCost = product.WeightedAverageCost;
         _stockExpiry = null;
+        _confirmingWaste = false;
+    }
+
+    private void CancelStockAction()
+    {
+        _stockAction = null;
+        _confirmingWaste = false;
+    }
+
+    private async Task UndoWasteAsync()
+    {
+        if (_undoWaste is not (Guid productId, _, decimal quantity))
+        {
+            return;
+        }
+
+        // Append-only undo: a compensating adjustment, never a deleted row.
+        await Inventory.AdjustStockAsync(productId, quantity, StockMovementType.Adjustment, "Undo wastage");
+        _undoWaste = null;
+        await ReloadAsync();
     }
 
     private async Task ApplyStockActionAsync()
@@ -182,10 +237,12 @@
         else
         {
             await Inventory.AdjustStockAsync(_stockProduct.Id, -_stockQty, StockMovementType.Wastage, "Wastage");
+            _undoWaste = (_stockProduct.Id, _stockProduct.Name, _stockQty);
         }
 
         _stockAction = null;
         _stockProduct = null;
+        _confirmingWaste = false;
         await ReloadAsync();
     }
 }

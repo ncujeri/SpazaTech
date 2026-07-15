@@ -51,6 +51,33 @@ else
 
         @if (!_tendering)
         {
+            <div class="pos-search">
+                <input class="big-input" type="search" placeholder="Search name or barcode"
+                       @bind="_search" @bind:event="oninput" />
+                @if (_search.Length > 0)
+                {
+                    <button class="big-btn small" @onclick='() => _search = string.Empty'>✕</button>
+                }
+            </div>
+
+            @if (_search.Length > 0)
+            {
+                <div class="search-results">
+                    @foreach (var product in FilteredProducts)
+                    {
+                        <button class="search-hit" @onclick="() => AddProduct(product)">
+                            <span>@product.Name</span>
+                            <span class="quick-price">R @product.SellPrice.ToString("0.00")</span>
+                        </button>
+                    }
+                    @if (!FilteredProducts.Any())
+                    {
+                        <p class="page-hint">Nothing matches. Try the barcode scanner.</p>
+                    }
+                </div>
+            }
+            else
+            {
             <div class="quick-grid">
                 @foreach (var product in _quickRing)
                 {
@@ -66,6 +93,7 @@ else
                     <span class="quick-name">📷 Scan</span>
                 </button>
             </div>
+            }
 
             @if (_looseOpen)
             {
@@ -109,6 +137,21 @@ else
                     </div>
                 }
                 <p class="tender-cash-line">Cash due: R @CashDueRounded.ToString("0.00")</p>
+
+                <label class="big-label">Cash given (optional)</label>
+                <input class="big-input" type="number" inputmode="decimal" step="10" min="0"
+                       placeholder="e.g. 100" @bind="_cashGiven" @bind:event="oninput" />
+                @if (_cashGiven > 0)
+                {
+                    @if (_cashGiven >= CashDueRounded)
+                    {
+                        <p class="change-due">Change: R @((_cashGiven - CashDueRounded).ToString("0.00"))</p>
+                    }
+                    else
+                    {
+                        <p class="change-due short">Still short R @((CashDueRounded - _cashGiven).ToString("0.00"))</p>
+                    }
+                }
 
                 <button class="big-btn cash" @onclick="() => CompleteAsync()">CASH R @CashDueRounded.ToString("0.00")</button>
                 <button class="big-btn card" @onclick="() => AddFullNonCash(PaymentMethod.Card)">CARD (full)</button>
@@ -185,6 +228,15 @@ else
     private string? _bookCustomerId;
     private string? _bookWarning;
     private IReadOnlyList<CustomerWithBalance> _bookCustomers = [];
+    private IReadOnlyList<Product> _allProducts = [];
+    private string _search = string.Empty;
+    private decimal _cashGiven;
+
+    private IEnumerable<Product> FilteredProducts
+        => _allProducts.Where(p =>
+                p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || (p.Barcode is not null && p.Barcode.StartsWith(_search, StringComparison.OrdinalIgnoreCase)))
+            .Take(20);
 
     private decimal Total => _cart.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
 
@@ -224,7 +276,10 @@ else
     }
 
     private async Task ReloadQuickRingAsync()
-        => _quickRing = await QuickRing.GetQuickRingProductsAsync();
+    {
+        _quickRing = await QuickRing.GetQuickRingProductsAsync();
+        _allProducts = await Inventory.GetProductsAsync();
+    }
 
     private void AddProduct(Product product)
     {
@@ -287,6 +342,7 @@ else
     {
         _tendering = false;
         _nonCash.Clear();
+        _cashGiven = 0m;
         _bookMode = false;
         _bookCustomerId = null;
         _bookWarning = null;
@@ -358,10 +414,16 @@ else
             await Notifications.NotifyLowStockAsync(alert.Name, alert.QuantityLeft);
         }
 
+        // Change must be computed while the cart still knows what was due.
+        decimal change = _cashGiven > 0 ? _cashGiven - CashDueRounded : 0m;
         _cart.Clear();
         _nonCash.Clear();
         _tendering = false;
-        _flash = $"Sale done: R {completed.Sale.Total:0.00}";
+        _search = string.Empty;
+        _cashGiven = 0m;
+        _flash = change > 0
+            ? $"Sale done. Change: R {change:0.00}"
+            : $"Sale done: R {completed.Sale.Total:0.00}";
         await ReloadQuickRingAsync();
         StateHasChanged();
     }

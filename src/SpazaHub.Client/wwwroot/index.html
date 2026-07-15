@@ -25,6 +25,11 @@
         <div class="loading-progress-text"></div>
     </div>
 
+    <div id="update-bar">
+        <span>New version ready</span>
+        <button type="button">Update now</button>
+    </div>
+
     <div id="blazor-error-ui">
         An unhandled error has occurred.
         <a href="" class="reload">Reload</a>
@@ -32,7 +37,33 @@
     </div>
     <script src="js/notifications.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>
-    <script>navigator.serviceWorker.register('service-worker.js');</script>
+    <script>
+        navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then(function (reg) {
+            reg.update();
+            var bar = document.getElementById('update-bar');
+            function offerUpdate(worker) {
+                if (!worker) { return; }
+                bar.style.display = 'flex';
+                bar.querySelector('button').onclick = function () {
+                    worker.postMessage({ type: 'SKIP_WAITING' });
+                };
+            }
+            if (reg.waiting) { offerUpdate(reg.waiting); }
+            reg.addEventListener('updatefound', function () {
+                var installing = reg.installing;
+                if (!installing) { return; }
+                installing.addEventListener('statechange', function () {
+                    if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                        offerUpdate(reg.waiting || installing);
+                    }
+                });
+            });
+            var reloaded = false;
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+                if (!reloaded) { reloaded = true; location.reload(); }
+            });
+        });
+    </script>
 </body>
 
 </html>

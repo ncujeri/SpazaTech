@@ -38,7 +38,25 @@
                        placeholder="Amount" @bind="_cashOutAmount" />
             </div>
             <input class="big-input" placeholder="What for (optional)" @bind="_cashOutNote" />
-            <button class="big-btn" @onclick="RecordCashOutAsync" disabled="@(_cashOutAmount <= 0)">Record money out</button>
+            @if (!_confirmingCashOut)
+            {
+                <button class="big-btn" @onclick="() => _confirmingCashOut = true"
+                        disabled="@(_cashOutAmount <= 0)">Record money out</button>
+            }
+            else
+            {
+                <button class="big-btn danger" @onclick="RecordCashOutAsync">
+                    Take R @_cashOutAmount.ToString("0.00") out? Tap to confirm
+                </button>
+            }
+
+            @if (_undoCashOut is not null)
+            {
+                <div class="undo-banner">
+                    <span>R @_undoCashOut.Value.Amount.ToString("0.00") taken out</span>
+                    <button class="big-btn small" @onclick="UndoCashOutAsync">UNDO</button>
+                </div>
+            }
 
             <h2>Count and sign off</h2>
             <label class="big-label">Cash counted in the drawer</label>
@@ -91,6 +109,8 @@
     private decimal _declared;
     private decimal _cashOutAmount;
     private string? _cashOutNote;
+    private bool _confirmingCashOut;
+    private (decimal Amount, CashMovementType Type)? _undoCashOut;
     private CashMovementType _cashOutType = CashMovementType.Payout;
     private IReadOnlyList<CashMovement> _movements = [];
     private string? _error;
@@ -137,9 +157,11 @@
         _error = null;
         try
         {
-            await CashUpSvc.RecordCashOutAsync(_cashOutAmount, _cashOutType, _cashOutNote);
+            await CashUpSvc.RecordCashOutAsync(_cashOutAmount, _cashOutType, _cashOutNote, Session.CurrentCashierId);
+            _undoCashOut = (_cashOutAmount, _cashOutType);
             _cashOutAmount = 0m;
             _cashOutNote = null;
+            _confirmingCashOut = false;
             await ReloadAsync();
         }
         catch (InvalidOperationException ex)
@@ -160,6 +182,18 @@
         {
             _error = ex.Message;
         }
+    }
+
+    private async Task UndoCashOutAsync()
+    {
+        if (_undoCashOut is not (decimal amount, CashMovementType type))
+        {
+            return;
+        }
+
+        await CashUpSvc.UndoCashOutAsync(amount, type, Session.CurrentCashierId);
+        _undoCashOut = null;
+        await ReloadAsync();
     }
 
     private async Task OwnerSignAsync()

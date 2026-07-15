@@ -129,6 +129,13 @@ The features that map to how township shops actually run:
 - **OTP endpoint rate limiting**: five requests per ten minutes per address, because every OTP costs real SMS money.
 - **Critical persistence bug fixed.** Microsoft.Data.Sqlite defaults new databases to WAL journal mode, so committed rows lived in a side file the OPFS copy never included: local data silently vanished on every reload. The store now forces the rollback journal at schema creation (and copies the WAL file defensively). Verified in the browser: the full database (172KB) survives reload, where before only an empty 4KB page came back.
 
+## Counter polish
+
+- **Search everywhere it matters**: the POS has a search box that filters by name or barcode prefix (the quick ring stays for the top sellers; search covers the other 200 lines), and the Stock page filters the same way.
+- **Change calculator**: the tender screen takes "cash given" and shows the change in big green numerals before the sale is completed, then repeats it in the confirmation flash. Shortfalls show in red.
+- **Two-tap confirm plus undo on the dangerous taps**: wastage and drawer money-out both ask "Tap to confirm" with the amount in the button, and after saving show an UNDO banner. Undo writes a compensating movement, never a deleted row, so the audit trail stays honest.
+- **Update prompt**: when a new build is deployed, a yellow "New version ready" bar appears; one tap activates the new service worker and reloads. The registration uses updateViaCache none, without which browsers serve the cached asset manifest during update checks and shops would genuinely run stale builds for weeks.
+
 ## Roadmap
 
 1. Foundation (done)

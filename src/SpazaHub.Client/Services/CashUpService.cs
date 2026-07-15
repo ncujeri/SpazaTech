@@ -92,6 +92,33 @@ public class CashUpService
         });
     }
 
+    /// <summary>
+    /// Puts a mistaken money-out back in the drawer: a compensating positive movement
+    /// of the same type, never a deleted row.
+    /// </summary>
+    public async Task UndoCashOutAsync(
+        decimal amount, CashMovementType type, Guid? cashierId = null)
+    {
+        if (amount <= 0m)
+        {
+            throw new InvalidOperationException("Amount must be positive.");
+        }
+
+        if (type is not (CashMovementType.Payout or CashMovementType.Expense or CashMovementType.BankDrop))
+        {
+            throw new InvalidOperationException("Only payouts, expenses, and bank drops can be undone here.");
+        }
+
+        await _store.SaveLocalWriteAsync(new CashMovement
+        {
+            Type = type,
+            Amount = amount,
+            Note = "Undo",
+            CashierId = cashierId,
+            OccurredAtUtc = DateTime.UtcNow
+        });
+    }
+
     /// <summary>Live drawer cash for the current trading day.</summary>
     public async Task<decimal> GetDrawerCashAsync()
     {
