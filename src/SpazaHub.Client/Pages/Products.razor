@@ -1,0 +1,248 @@
+@page "/products"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@using SpazaHub.Domain.Enums
+@inject AuthApiClient Auth
+@inject InventoryService Inventory
+@inject SessionService Session
+@inject NavigationManager Nav
+
+<PageTitle>Products</PageTitle>
+
+<div class="products-page">
+    <div class="products-header">
+        <h1>Products</h1>
+        <div class="header-actions">
+            @if (Session.IsOwner)
+            {
+                <button class="big-btn small" @onclick='() => Nav.NavigateTo("/stocktake")'>Count stock</button>
+            }
+            <button class="big-btn primary" @onclick="NewProduct">+ New product</button>
+        </div>
+    </div>
+
+    <input class="big-input" type="search" placeholder="Search name or barcode"
+           @bind="_search" @bind:event="oninput" />
+
+    @if (_undoWaste is not null)
+    {
+        <div class="undo-banner">
+            <span>Threw away @_undoWaste.Value.Quantity.ToString("0.###") × @_undoWaste.Value.Name</span>
+            <button class="big-btn small" @onclick="UndoWasteAsync">UNDO</button>
+        </div>
+    }
+
+    @if (_expiryAlerts.Count > 0)
+    {
+        <div class="expiry-banner">
+            @foreach (var item in _expiryAlerts)
+            {
+                <span class="@(item.Alert.IsExpired ? "expired" : "")">
+                    @(item.Alert.IsExpired ? "✖" : "⚠") @item.ProductName:
+                    about @item.Alert.EstimatedUnitsAtRisk.ToString("0.###")
+                    @(item.Alert.IsExpired ? "expired" : "expire") @item.Alert.ExpiryDate.ToString("dd MMM")
+                </span>
+            }
+        </div>
+    }
+
+    @if (_editing is not null)
+    {
+        <div class="product-form">
+            <label class="big-label">Name</label>
+            <input class="big-input" @bind="_editing.Name" />
+
+            <label class="big-label">Barcode (scan or type)</label>
+            <input class="big-input" @bind="_editing.Barcode" />
+
+            <label class="big-label">Sell price (R)</label>
+            <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_editing.SellPrice" />
+
+            <label class="big-label">Low stock alert at</label>
+            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_editing.LowStockThreshold" />
+
+            <div class="form-actions">
+                <button class="big-btn primary" @onclick="SaveProductAsync">Save</button>
+                <button class="big-btn" @onclick="() => _editing = null">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (_stockAction is not null)
+    {
+        <div class="product-form">
+            <h2>@_stockActionTitle: @_stockProduct!.Name</h2>
+
+            <label class="big-label">Quantity</label>
+            <input class="big-input" type="number" inputmode="decimal" min="0" @bind="_stockQty" @bind:event="oninput" />
+
+            @if (_stockAction == StockMovementType.GoodsReceived)
+            {
+                <label class="big-label">Cost per unit (R)</label>
+                <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_stockCost" />
+
+                <label class="big-label">Best before (optional)</label>
+                <input class="big-input" type="date" @bind="_stockExpiry" />
+            }
+
+            <div class="form-actions">
+                @if (_stockAction == StockMovementType.Wastage && !_confirmingWaste)
+                {
+                    <button class="big-btn primary" @onclick="() => _confirmingWaste = true"
+                            disabled="@(_stockQty <= 0)">Save</button>
+                }
+                else if (_stockAction == StockMovementType.Wastage)
+                {
+                    <button class="big-btn danger" @onclick="ApplyStockActionAsync">
+                        Throw away @_stockQty.ToString("0.###")? Tap to confirm
+                    </button>
+                }
+                else
+                {
+                    <button class="big-btn primary" @onclick="ApplyStockActionAsync">Save</button>
+                }
+                <button class="big-btn" @onclick="CancelStockAction">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <div class="product-list">
+        @foreach (var product in VisibleProducts)
+        {
+            <div class="product-row @(product.LowStockThreshold > 0 && product.CachedQuantity <= product.LowStockThreshold ? "low" : "")">
+                <div class="product-main" @onclick="() => Edit(product)">
+                    <span class="product-name">@product.Name</span>
+                    <span class="product-price">R @product.SellPrice.ToString("0.00")</span>
+                    <span class="product-qty">@product.CachedQuantity.ToString("0.###") in stock</span>
+                </div>
+                <div class="product-actions">
+                    @if (Session.IsOwner)
+                    {
+                        <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.GoodsReceived)">Receive</button>
+                    }
+                    <button class="big-btn small" @onclick="() => OpenStockAction(product, StockMovementType.Wastage)">Waste</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<Product> _products = [];
+    private IReadOnlyList<InventoryService.NamedExpiryAlert> _expiryAlerts = [];
+    private Product? _editing;
+    private Product? _stockProduct;
+    private StockMovementType? _stockAction;
+    private decimal _stockQty;
+    private decimal _stockCost;
+    private DateOnly? _stockExpiry;
+    private string _search = string.Empty;
+    private bool _confirmingWaste;
+    private (Guid ProductId, string Name, decimal Quantity)? _undoWaste;
+
+    private IEnumerable<Product> VisibleProducts
+        => _search.Length == 0
+            ? _products
+            : _products.Where(p =>
+                p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || (p.Barcode is not null && p.Barcode.StartsWith(_search, StringComparison.OrdinalIgnoreCase)));
+
+    private string _stockActionTitle => _stockAction == StockMovementType.GoodsReceived ? "Receive stock" : "Record wastage";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _products = await Inventory.GetProductsAsync();
+        _expiryAlerts = await Inventory.GetExpiryAlertsAsync();
+    }
+
+    private void NewProduct() => _editing = new Product();
+
+    private void Edit(Product product) => _editing = new Product
+    {
+        Id = product.Id,
+        Name = product.Name,
+        Barcode = product.Barcode,
+        SellPrice = product.SellPrice,
+        WeightedAverageCost = product.WeightedAverageCost,
+        CachedQuantity = product.CachedQuantity,
+        LowStockThreshold = product.LowStockThreshold,
+        IsActive = product.IsActive,
+        CreatedAtUtc = product.CreatedAtUtc
+    };
+
+    private async Task SaveProductAsync()
+    {
+        if (_editing is null || string.IsNullOrWhiteSpace(_editing.Name))
+        {
+            return;
+        }
+
+        await Inventory.SaveProductAsync(_editing);
+        _editing = null;
+        await ReloadAsync();
+    }
+
+    private void OpenStockAction(Product product, StockMovementType type)
+    {
+        _stockProduct = product;
+        _stockAction = type;
+        _stockQty = 0m;
+        _stockCost = product.WeightedAverageCost;
+        _stockExpiry = null;
+        _confirmingWaste = false;
+    }
+
+    private void CancelStockAction()
+    {
+        _stockAction = null;
+        _confirmingWaste = false;
+    }
+
+    private async Task UndoWasteAsync()
+    {
+        if (_undoWaste is not (Guid productId, _, decimal quantity))
+        {
+            return;
+        }
+
+        // Append-only undo: a compensating adjustment, never a deleted row.
+        await Inventory.AdjustStockAsync(productId, quantity, StockMovementType.Adjustment, "Undo wastage");
+        _undoWaste = null;
+        await ReloadAsync();
+    }
+
+    private async Task ApplyStockActionAsync()
+    {
+        if (_stockProduct is null || _stockAction is null || _stockQty <= 0m)
+        {
+            return;
+        }
+
+        if (_stockAction == StockMovementType.GoodsReceived)
+        {
+            await Inventory.ReceiveGoodsAsync(_stockProduct.Id, _stockQty, _stockCost, _stockExpiry);
+        }
+        else
+        {
+            await Inventory.AdjustStockAsync(_stockProduct.Id, -_stockQty, StockMovementType.Wastage, "Wastage");
+            _undoWaste = (_stockProduct.Id, _stockProduct.Name, _stockQty);
+        }
+
+        _stockAction = null;
+        _stockProduct = null;
+        _confirmingWaste = false;
+        await ReloadAsync();
+    }
+}

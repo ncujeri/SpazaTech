@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{2D92585F-FAAD-4E4A-B6BB-5643E63DF141}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpazaHub.Shared", "src\SpazaHub.Shared\SpazaHub.Shared.csproj", "{FDD94BEC-0DB4-4AD2-AC73-DED6DC50514E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpazaHub.Api", "src\SpazaHub.Api\SpazaHub.Api.csproj", "{D0AA76A0-EA31-4D30-B119-E9C8CDC49D35}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpazaHub.Client", "src\SpazaHub.Client\SpazaHub.Client.csproj", "{99EF5A5D-1E6C-4BC8-81F9-BF94C430AF11}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{DCE891FA-A2C5-47FD-B6AA-CF5F61F875C5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpazaHub.Tests", "tests\SpazaHub.Tests\SpazaHub.Tests.csproj", "{C2AE7E14-D6E0-4EBF-AB9C-A057EF3017D3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FDD94BEC-0DB4-4AD2-AC73-DED6DC50514E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FDD94BEC-0DB4-4AD2-AC73-DED6DC50514E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FDD94BEC-0DB4-4AD2-AC73-DED6DC50514E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FDD94BEC-0DB4-4AD2-AC73-DED6DC50514E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D0AA76A0-EA31-4D30-B119-E9C8CDC49D35}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D0AA76A0-EA31-4D30-B119-E9C8CDC49D35}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D0AA76A0-EA31-4D30-B119-E9C8CDC49D35}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D0AA76A0-EA31-4D30-B119-E9C8CDC49D35}.Release|Any CPU.Build.0 = Release|Any CPU
+		{99EF5A5D-1E6C-4BC8-81F9-BF94C430AF11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{99EF5A5D-1E6C-4BC8-81F9-BF94C430AF11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{99EF5A5D-1E6C-4BC8-81F9-BF94C430AF11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{99EF5A5D-1E6C-4BC8-81F9-BF94C430AF11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2AE7E14-D6E0-4EBF-AB9C-A057EF3017D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2AE7E14-D6E0-4EBF-AB9C-A057EF3017D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2AE7E14-D6E0-4EBF-AB9C-A057EF3017D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2AE7E14-D6E0-4EBF-AB9C-A057EF3017D3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FDD94BEC-0DB4-4AD2-AC73-DED6DC50514E} = {2D92585F-FAAD-4E4A-B6BB-5643E63DF141}
+		{D0AA76A0-EA31-4D30-B119-E9C8CDC49D35} = {2D92585F-FAAD-4E4A-B6BB-5643E63DF141}
+		{99EF5A5D-1E6C-4BC8-81F9-BF94C430AF11} = {2D92585F-FAAD-4E4A-B6BB-5643E63DF141}
+		{C2AE7E14-D6E0-4EBF-AB9C-A057EF3017D3} = {DCE891FA-A2C5-47FD-B6AA-CF5F61F875C5}
+	EndGlobalSection
+EndGlobal

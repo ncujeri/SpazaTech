@@ -1,0 +1,200 @@
+@page "/shift"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@inject AuthApiClient Auth
+@inject SessionService Session
+@inject NavigationManager Nav
+
+<PageTitle>Shift</PageTitle>
+
+<div class="shift-page">
+    <h1>Who is working?</h1>
+
+    @if (_pinTargetName is null)
+    {
+        <div class="shift-grid">
+            @foreach (var cashier in _cashiers)
+            {
+                <button class="quick-btn" @onclick="() => PickCashier(cashier)">
+                    <span class="quick-name">@cashier.Name</span>
+                </button>
+            }
+            <button class="quick-btn scan" @onclick="PickOwner">
+                <span class="quick-name">Owner</span>
+            </button>
+        </div>
+
+        @if (Session.IsOwner)
+        {
+            <h2>Add a cashier</h2>
+            <div class="product-form">
+                <input class="big-input" placeholder="Name" @bind="_newName" @bind:event="oninput" />
+                <input class="big-input otp-small" type="password" inputmode="numeric" maxlength="4"
+                       placeholder="4 digit PIN" @bind="_newPin" @bind:event="oninput" />
+                <label class="consent-row">
+                    <input type="checkbox" @bind="_newCanCashback" />
+                    <span>May do cashback</span>
+                </label>
+                <button class="big-btn primary" @onclick="AddCashierAsync"
+                        disabled="@(string.IsNullOrWhiteSpace(_newName) || _newPin.Length != 4)">
+                    Add cashier
+                </button>
+            </div>
+
+            @if (_ownerPinMissing)
+            {
+                <h2>Owner PIN</h2>
+                <p class="page-hint">Set a PIN so cashiers cannot switch back to owner mode.</p>
+                <div class="split-row">
+                    <input class="big-input otp-small" type="password" inputmode="numeric" maxlength="4"
+                           placeholder="4 digit PIN" @bind="_ownerPinNew" @bind:event="oninput" />
+                    <button class="big-btn" @onclick="SetOwnerPinAsync"
+                            disabled="@(_ownerPinNew.Length != 4)">Set</button>
+                </div>
+            }
+        }
+    }
+    else
+    {
+        <p class="pin-for">PIN for <strong>@_pinTargetName</strong></p>
+        <div class="pin-dots">
+            @for (int i = 0; i < 4; i++)
+            {
+                <span class="pin-dot @(i < _pin.Length ? "filled" : "")"></span>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <p class="error-text">@_error</p>
+        }
+
+        <div class="keypad">
+            @foreach (var digit in new[] { "1", "2", "3", "4", "5", "6", "7", "8", "9" })
+            {
+                <button class="key" @onclick="() => PressAsync(digit)">@digit</button>
+            }
+            <button class="key ghost" @onclick="CancelPin">✕</button>
+            <button class="key" @onclick='() => PressAsync("0")'>0</button>
+            <button class="key ghost" @onclick="Backspace">⌫</button>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<Cashier> _cashiers = [];
+    private string? _pinTargetName;
+    private Guid? _pinTargetCashierId;
+    private string _pin = string.Empty;
+    private string? _error;
+    private string _newName = string.Empty;
+    private string _newPin = string.Empty;
+    private bool _newCanCashback;
+    private bool _ownerPinMissing;
+    private string _ownerPinNew = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _cashiers = await Session.GetCashiersAsync();
+        _ownerPinMissing = await Session.OwnerPinMissingAsync();
+    }
+
+    private void PickCashier(Cashier cashier)
+    {
+        _pinTargetName = cashier.Name;
+        _pinTargetCashierId = cashier.Id;
+        _pin = string.Empty;
+        _error = null;
+    }
+
+    private async void PickOwner()
+    {
+        // No owner PIN configured yet: switch straight through.
+        if (await Session.OwnerPinMissingAsync())
+        {
+            await Session.SwitchToOwnerAsync(null);
+            Nav.NavigateTo("/pos");
+            return;
+        }
+
+        _pinTargetName = "Owner";
+        _pinTargetCashierId = null;
+        _pin = string.Empty;
+        _error = null;
+        StateHasChanged();
+    }
+
+    private async Task PressAsync(string digit)
+    {
+        if (_pin.Length >= 4)
+        {
+            return;
+        }
+
+        _pin += digit;
+        if (_pin.Length < 4)
+        {
+            return;
+        }
+
+        try
+        {
+            bool ok = _pinTargetCashierId is Guid cashierId
+                ? await Session.StartCashierShiftAsync(cashierId, _pin)
+                : await Session.SwitchToOwnerAsync(_pin);
+
+            if (ok)
+            {
+                Nav.NavigateTo("/pos");
+            }
+            else
+            {
+                _error = "Wrong PIN.";
+                _pin = string.Empty;
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+            _pin = string.Empty;
+        }
+    }
+
+    private void Backspace() => _pin = _pin.Length > 0 ? _pin[..^1] : _pin;
+
+    private void CancelPin()
+    {
+        _pinTargetName = null;
+        _pin = string.Empty;
+        _error = null;
+    }
+
+    private async Task AddCashierAsync()
+    {
+        await Session.CreateCashierAsync(_newName, _newPin, _newCanCashback);
+        _newName = string.Empty;
+        _newPin = string.Empty;
+        _newCanCashback = false;
+        await ReloadAsync();
+    }
+
+    private async Task SetOwnerPinAsync()
+    {
+        await Session.SetOwnerPinAsync(_ownerPinNew);
+        _ownerPinNew = string.Empty;
+        _ownerPinMissing = false;
+    }
+}

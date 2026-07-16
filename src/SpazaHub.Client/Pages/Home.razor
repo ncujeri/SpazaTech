@@ -1,0 +1,14 @@
+@page "/"
+@using SpazaHub.Client.Services
+@inject AuthApiClient Auth
+@inject NavigationManager Nav
+
+<PageTitle>SpazaHub</PageTitle>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        Nav.NavigateTo(Auth.IsSetUp ? "/pos" : "/setup");
+    }
+}

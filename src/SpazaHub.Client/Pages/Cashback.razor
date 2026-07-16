@@ -1,0 +1,112 @@
+@page "/cashback"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Enums
+@using SpazaHub.Domain.Services
+@inject AuthApiClient Auth
+@inject CashbackService CashbackSvc
+@inject SessionService Session
+@inject NavigationManager Nav
+
+<PageTitle>Cashback</PageTitle>
+
+<div class="cashback-page">
+    <h1>Cashback</h1>
+
+    @if (_done is not null)
+    {
+        <div class="cashback-done">
+            <p class="cashback-big">Paid out R @_done.Transaction.CashOutAmount.ToString("0.00")</p>
+            <p>Card was charged R @_done.Transaction.TotalCharged.ToString("0.00")</p>
+            @if (_done.Transaction.FlaggedForOwnerReview)
+            {
+                <p class="review-flag">Flagged for owner review</p>
+            }
+            <button class="big-btn primary" @onclick="Reset">New cashback</button>
+        </div>
+    }
+    else
+    {
+        <label class="big-label">Cash the customer wants</label>
+        <input class="big-input" type="number" inputmode="decimal" step="10" min="0"
+               @bind="_amount" @bind:after="RefreshQuoteAsync" />
+
+        @if (_quote is not null)
+        {
+            <div class="cashback-quote">
+                <div class="quote-row"><span>Cash out</span><span>R @_quote.Value.CashOut.ToString("0.00")</span></div>
+                <div class="quote-row fee"><span>Fee</span><span>R @_quote.Value.Fee.ToString("0.00")</span></div>
+                <div class="quote-row charge"><span>Charge card</span><span>R @_quote.Value.TotalCharged.ToString("0.00")</span></div>
+            </div>
+        }
+
+        @if (_denial != CashbackDenialReason.None)
+        {
+            <p class="error-text">@DenialText(_denial)</p>
+        }
+
+        <button class="big-btn card" @onclick="() => CompleteAsync(PaymentMethod.Card)"
+                disabled="@(!CanConfirm)">Charge CARD R @(_quote?.TotalCharged.ToString("0.00") ?? "0.00")</button>
+        <button class="big-btn sassa" @onclick="() => CompleteAsync(PaymentMethod.SassaCard)"
+                disabled="@(!CanConfirm)">Charge SASSA R @(_quote?.TotalCharged.ToString("0.00") ?? "0.00")</button>
+    }
+</div>
+
+@code {
+    private decimal _amount;
+    private CashbackQuote? _quote;
+    private CashbackDenialReason _denial = CashbackDenialReason.None;
+    private CashbackEvents? _done;
+
+    private bool CanConfirm => _amount > 0m && _denial == CashbackDenialReason.None;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+        }
+    }
+
+    private async Task RefreshQuoteAsync()
+    {
+        if (_amount <= 0m)
+        {
+            _quote = null;
+            _denial = CashbackDenialReason.None;
+            return;
+        }
+
+        _quote = await CashbackSvc.GetQuoteAsync(_amount);
+        _denial = await CashbackSvc.CheckAsync(_amount, PaymentMethod.Card, Session.CurrentCashierId);
+    }
+
+    private async Task CompleteAsync(PaymentMethod method)
+    {
+        _denial = await CashbackSvc.CheckAsync(_amount, method, Session.CurrentCashierId);
+        if (_denial != CashbackDenialReason.None)
+        {
+            return;
+        }
+
+        _done = await CashbackSvc.CompleteCashbackAsync(_amount, method, Session.CurrentCashierId);
+    }
+
+    private void Reset()
+    {
+        _done = null;
+        _amount = 0m;
+        _quote = null;
+        _denial = CashbackDenialReason.None;
+    }
+
+    private static string DenialText(CashbackDenialReason reason) => reason switch
+    {
+        CashbackDenialReason.OverPerTransactionLimit => "Over the limit for one cashback.",
+        CashbackDenialReason.OverDailyLimit => "The shop reached today's cashback limit.",
+        CashbackDenialReason.DrawerFloorBreached => "Not enough cash in the drawer for this.",
+        CashbackDenialReason.CashierNotPermitted => "Ask the owner to do cashback.",
+        CashbackDenialReason.InvalidPaymentMethod => "Cashback works with card or SASSA only.",
+        _ => "Cashback cannot be done right now."
+    };
+}
