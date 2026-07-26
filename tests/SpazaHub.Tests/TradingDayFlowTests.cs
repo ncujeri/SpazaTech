@@ -54,10 +54,10 @@ public class TradingDayFlowTests : IDisposable
     {
         var persistence = new OpfsDbPersistence(new StubJsRuntime(), NullLogger<OpfsDbPersistence>.Instance);
         _store = new LocalStore(_factory, persistence, NullLogger<LocalStore>.Instance);
-        _pos = new PosService(_store, _factory);
+        _cashUp = new CashUpService(_store, _factory);
+        _pos = new PosService(_store, _factory, _cashUp);
         _inventory = new InventoryService(_store, _factory);
         _cashback = new CashbackService(_store, _factory);
-        _cashUp = new CashUpService(_store, _factory);
         _reports = new ReportService(_factory);
 
         _store.InitializeAsync(Guid.NewGuid(), Guid.NewGuid()).GetAwaiter().GetResult();

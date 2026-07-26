@@ -41,6 +41,15 @@
                 </button>
             </div>
 
+            <h2>What cashiers may do</h2>
+            <div class="product-form">
+                <label class="consent-row">
+                    <input type="checkbox" checked="@_cashiersMayDoReturns" @onchange="ToggleCashierReturnsAsync" />
+                    <span>Cashiers may do refunds and returns</span>
+                </label>
+                <p class="page-hint">Returns take cash out of the drawer. Leave this off to keep refunds owner-only.</p>
+            </div>
+
             @if (_ownerPinMissing)
             {
                 <h2>Owner PIN</h2>
@@ -92,6 +101,7 @@
     private bool _newCanCashback;
     private bool _ownerPinMissing;
     private string _ownerPinNew = string.Empty;
+    private bool _cashiersMayDoReturns;
 
     protected override async Task OnInitializedAsync()
     {
@@ -110,6 +120,13 @@
     {
         _cashiers = await Session.GetCashiersAsync();
         _ownerPinMissing = await Session.OwnerPinMissingAsync();
+        _cashiersMayDoReturns = await Session.GetCashiersMayDoReturnsAsync();
+    }
+
+    private async Task ToggleCashierReturnsAsync(ChangeEventArgs e)
+    {
+        _cashiersMayDoReturns = e.Value is true;
+        await Session.SetCashiersMayDoReturnsAsync(_cashiersMayDoReturns);
     }
 
     private void PickCashier(Cashier cashier)

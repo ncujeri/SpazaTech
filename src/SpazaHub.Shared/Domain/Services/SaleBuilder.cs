@@ -15,6 +15,9 @@ public sealed record CartLine(
 /// <summary>One non-cash tender entered by the cashier. Cash is always the remainder.</summary>
 public sealed record TenderInput(PaymentMethod Method, decimal Amount);
 
+/// <summary>How much of one original sale line the customer is bringing back.</summary>
+public sealed record ReturnSelection(SaleLine OriginalLine, decimal ReturnQuantity);
+
 /// <summary>
 /// Everything one completed sale produces, in the exact order it must be written
 /// locally and pushed to the server (parents before children).
@@ -214,6 +217,74 @@ public static class SaleBuilder
             {
                 reversal.CashMovement.Amount = -originalCash.Amount;
             }
+        }
+
+        // Link every reversal line to the original it returns.
+        for (int i = 0; i < reversal.Lines.Count && i < originalLines.Count; i++)
+        {
+            reversal.Lines[i].ReversesSaleLineId = originalLines[i].Id;
+        }
+
+        return reversal;
+    }
+
+    /// <summary>
+    /// Builds a partial return: only the selected lines and quantities come back. The
+    /// refund goes out by one method (cash from the drawer, or a book credit / card
+    /// reversal), because splitting a partial refund across the original tenders the way
+    /// a full void does is more than a counter needs. Stock returns to the shelf and the
+    /// cost snapshots carry over so margins net out for the returned portion.
+    /// </summary>
+    public static CompletedSale BuildPartialReversal(
+        Sale original,
+        IReadOnlyList<ReturnSelection> selections,
+        PaymentMethod refundMethod,
+        decimal cashRoundingIncrement,
+        Guid deviceId,
+        Guid? cashierId,
+        DateTime occurredAtUtc)
+    {
+        if (original.ReversesSaleId is not null)
+        {
+            throw new InvalidOperationException("Cannot return against a void; ring the goods again instead.");
+        }
+
+        if (selections.Count == 0)
+        {
+            throw new InvalidOperationException("Choose at least one item to return.");
+        }
+
+        foreach (var selection in selections)
+        {
+            if (selection.ReturnQuantity <= 0m || selection.ReturnQuantity > selection.OriginalLine.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Return quantity for '{selection.OriginalLine.Description}' must be between 0 and what was sold.");
+            }
+        }
+
+        var reversedCart = selections
+            .Select(s => new CartLine(
+                s.OriginalLine.ProductId, s.OriginalLine.Description,
+                -s.ReturnQuantity, s.OriginalLine.UnitPrice, s.OriginalLine.UnitCostSnapshot))
+            .ToList();
+
+        decimal returnedValue = reversedCart
+            .Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2, MidpointRounding.AwayFromZero));
+
+        // Cash refunds round to the shop increment; any other method reverses the exact value.
+        var nonCash = refundMethod == PaymentMethod.Cash
+            ? new List<TenderInput>()
+            : [new TenderInput(refundMethod, returnedValue)];
+
+        var reversal = Build(
+            reversedCart, nonCash,
+            refundMethod == PaymentMethod.Cash ? cashRoundingIncrement : 0m,
+            deviceId, cashierId, occurredAtUtc, original.Id);
+
+        for (int i = 0; i < reversal.Lines.Count && i < selections.Count; i++)
+        {
+            reversal.Lines[i].ReversesSaleLineId = selections[i].OriginalLine.Id;
         }
 
         return reversal;

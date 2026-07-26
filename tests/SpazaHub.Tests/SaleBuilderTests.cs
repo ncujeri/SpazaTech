@@ -170,4 +170,68 @@ public class SaleBuilderTests
         Assert.Equal(-60m, reversal.Payments.Single(p => p.Method == PaymentMethod.Card).Amount);
         Assert.Equal(-40m, reversal.Payments.Single(p => p.Method == PaymentMethod.Cash).Amount);
     }
+
+    [Fact]
+    public void BuildPartialReversal_ReturnsOneLine_RefundsCashAndRestocks()
+    {
+        var productId = Guid.NewGuid();
+        // Two products on one sale; only the six-pack comes back, one unit of it.
+        var original = SaleBuilder.Build(
+            [
+                Line(6, 12m, cost: 9m, productId: productId),
+                new CartLine(Guid.NewGuid(), "Loaf", 1m, 18m, 13m)
+            ],
+            [], 0.10m, DeviceId, CashierId, Now);
+
+        var beer = original.Lines.Single(l => l.ProductId == productId);
+
+        var reversal = SaleBuilder.BuildPartialReversal(
+            original.Sale,
+            [new ReturnSelection(beer, 1m)],
+            PaymentMethod.Cash, 0.10m, DeviceId, CashierId, Now.AddMinutes(3));
+
+        Assert.Equal(original.Sale.Id, reversal.Sale.ReversesSaleId);
+        Assert.Equal(-12m, reversal.Sale.Total);
+
+        // Only the returned line reverses, linked to its original.
+        var line = Assert.Single(reversal.Lines);
+        Assert.Equal(-1m, line.Quantity);
+        Assert.Equal(beer.Id, line.ReversesSaleLineId);
+        Assert.Equal(9m, line.UnitCostSnapshot);
+
+        // One unit back on the shelf, R12 cash out of the drawer.
+        Assert.Equal(1m, Assert.Single(reversal.StockMovements).Quantity);
+        Assert.Equal(-12m, reversal.CashMovement!.Amount);
+        Assert.Equal(CashMovementType.CashRefund, reversal.CashMovement.Type);
+    }
+
+    [Fact]
+    public void BuildPartialReversal_ToBookCredit_MovesNoCash()
+    {
+        var productId = Guid.NewGuid();
+        var original = SaleBuilder.Build(
+            [Line(2, 25m, cost: 18m, productId: productId)], [], 0.10m, DeviceId, CashierId, Now);
+
+        var reversal = SaleBuilder.BuildPartialReversal(
+            original.Sale,
+            [new ReturnSelection(original.Lines[0], 1m)],
+            PaymentMethod.StoreCredit, 0.10m, DeviceId, CashierId, Now);
+
+        // A book refund reverses the exact value with no cash leaving the drawer.
+        Assert.Null(reversal.CashMovement);
+        Assert.Equal(-25m, reversal.Payments.Single(p => p.Method == PaymentMethod.StoreCredit).Amount);
+    }
+
+    [Fact]
+    public void BuildPartialReversal_RejectsOverReturnAndEmptySelection()
+    {
+        var original = SaleBuilder.Build([Line(2, 10m)], [], 0.10m, DeviceId, CashierId, Now);
+
+        Assert.Throws<InvalidOperationException>(() => SaleBuilder.BuildPartialReversal(
+            original.Sale, [], PaymentMethod.Cash, 0.10m, DeviceId, CashierId, Now));
+
+        Assert.Throws<InvalidOperationException>(() => SaleBuilder.BuildPartialReversal(
+            original.Sale, [new ReturnSelection(original.Lines[0], 3m)],
+            PaymentMethod.Cash, 0.10m, DeviceId, CashierId, Now));
+    }
 }

@@ -70,6 +70,10 @@ else
                 {
                     <button class="big-btn small" @onclick='() => _search = string.Empty'>✕</button>
                 }
+                else
+                {
+                    <button class="big-btn small" @onclick='() => Nav.NavigateTo("/returns")'>↩ Returns</button>
+                }
             </div>
 
             @if (_search.Length > 0)

@@ -1,0 +1,271 @@
+@page "/returns"
+@using SpazaHub.Client.Services
+@using SpazaHub.Domain.Entities
+@using SpazaHub.Domain.Enums
+@inject AuthApiClient Auth
+@inject PosService PosSvc
+@inject SessionService Session
+@inject NavigationManager Nav
+
+<PageTitle>Returns</PageTitle>
+
+<div class="returns-page">
+    <div class="products-header">
+        <h1>Returns</h1>
+        <button class="big-btn small" @onclick='() => Nav.NavigateTo("/pos")'>Back to till</button>
+    </div>
+
+    @if (!_allowed)
+    {
+        <p class="page-hint">Only the owner can do returns in this shop. Ask the owner to sign in, or to switch returns on for cashiers under Shift.</p>
+    }
+    else if (_flash is not null)
+    {
+        <div class="undo-banner"><span>@_flash</span></div>
+    }
+
+    @if (_allowed && _selected is null)
+    {
+        <p class="page-hint">Tap the sale the customer is bringing back.</p>
+        <div class="sales-list">
+            @foreach (var sale in _sales)
+            {
+                <button class="sale-row @(sale.ReversesSaleId is not null ? "refund" : "")"
+                        @onclick="() => OpenAsync(sale)" disabled="@(sale.ReversesSaleId is not null)">
+                    <span class="sale-time">@sale.OccurredAtUtc.ToLocalTime().ToString("HH:mm")</span>
+                    <span class="sale-total">R @sale.Total.ToString("0.00")</span>
+                    <span class="sale-tag">
+                        @(sale.ReversesSaleId is not null ? "refund" : "sale")
+                    </span>
+                </button>
+            }
+            @if (_sales.Count == 0)
+            {
+                <p class="page-hint">No sales yet today.</p>
+            }
+        </div>
+    }
+    else if (_allowed && _selected is not null)
+    {
+        <div class="return-detail">
+            <div class="return-detail-head">
+                <span>Sale R @_selected.Total.ToString("0.00") · @_selected.OccurredAtUtc.ToLocalTime().ToString("HH:mm")</span>
+                <button class="big-btn small" @onclick="Close">✕</button>
+            </div>
+
+            @if (_onBook)
+            {
+                <p class="page-hint">This sale is on the Makhulu Book.</p>
+            }
+
+            <div class="return-lines">
+                @foreach (var line in _lines)
+                {
+                    <div class="return-line @(line.Remaining <= 0m ? "done" : "")">
+                        <span class="return-name">@line.Description</span>
+                        <span class="return-info">
+                            @if (line.Remaining <= 0m)
+                            {
+                                <span>all returned</span>
+                            }
+                            else
+                            {
+                                <span>R @line.UnitPrice.ToString("0.00") · @line.Remaining.ToString("0.###") left</span>
+                            }
+                        </span>
+                        @if (line.Remaining > 0m)
+                        {
+                            <span class="return-qty">
+                                <button class="qty-btn" @onclick="() => Step(line, -1)">−</button>
+                                @Qty(line).ToString("0.###")
+                                <button class="qty-btn" @onclick="() => Step(line, 1)">+</button>
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+
+            <p class="return-refund-total">Refund: R @SelectedValue.ToString("0.00")</p>
+
+            <label class="big-label">Give the money back as</label>
+            <select class="big-input" @bind="_refundMethod">
+                @if (_onBook)
+                {
+                    <option value="@PaymentMethod.StoreCredit">Take off their book</option>
+                }
+                <option value="@PaymentMethod.Cash">Cash from drawer</option>
+                <option value="@PaymentMethod.Card">Card reversal</option>
+                <option value="@PaymentMethod.SassaCard">SASSA reversal</option>
+            </select>
+
+            @if (_error is not null)
+            {
+                <p class="error-text">@_error</p>
+                @if (_drawerShort)
+                {
+                    <button class="big-btn danger" @onclick="RefundSelectedAnywayAsync">Refund anyway (from pocket)</button>
+                }
+            }
+
+            @if (!_confirming)
+            {
+                <button class="big-btn primary" @onclick="() => _confirming = true"
+                        disabled="@(SelectedValue <= 0m)">
+                    Return selected items
+                </button>
+            }
+            else
+            {
+                <button class="big-btn danger" @onclick="RefundSelectedAsync">
+                    Refund R @SelectedValue.ToString("0.00")? Tap to confirm
+                </button>
+            }
+
+            <button class="big-btn" @onclick="() => _confirmingVoid = !_confirmingVoid" disabled="@_partlyReturned">
+                @(_confirmingVoid ? "Tap Refund whole sale below to confirm" : "Refund the whole sale")
+            </button>
+            @if (_confirmingVoid && !_partlyReturned)
+            {
+                <button class="big-btn danger" @onclick="VoidWholeAsync">
+                    Refund whole sale R @_selected.Total.ToString("0.00")
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _allowed;
+    private IReadOnlyList<Sale> _sales = [];
+    private Sale? _selected;
+    private IReadOnlyList<ReturnableLine> _lines = [];
+    private readonly Dictionary<Guid, decimal> _returnQty = [];
+    private bool _onBook;
+    private bool _partlyReturned;
+    private PaymentMethod _refundMethod = PaymentMethod.Cash;
+    private bool _confirming;
+    private bool _confirmingVoid;
+    private bool _drawerShort;
+    private string? _error;
+    private string? _flash;
+
+    private decimal SelectedValue => _lines
+        .Where(l => Qty(l) > 0m)
+        .Sum(l => Math.Round(Qty(l) * l.UnitPrice, 2, MidpointRounding.AwayFromZero));
+
+    private decimal Qty(ReturnableLine line) => _returnQty.GetValueOrDefault(line.SaleLineId, 0m);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        _allowed = await Session.CanDoReturnsAsync();
+        if (_allowed)
+        {
+            await ReloadSalesAsync();
+        }
+    }
+
+    private async Task ReloadSalesAsync() => _sales = await PosSvc.GetRecentSalesAsync();
+
+    private async Task OpenAsync(Sale sale)
+    {
+        _selected = sale;
+        _error = null;
+        _drawerShort = false;
+        _confirming = false;
+        _confirmingVoid = false;
+        _returnQty.Clear();
+        _lines = await PosSvc.GetReturnableLinesAsync(sale.Id);
+        _partlyReturned = _lines.Any(l => l.AlreadyReturned > 0m);
+        Guid? bookCustomer = await PosSvc.GetBookCustomerIdAsync(sale.Id);
+        _onBook = bookCustomer is not null;
+        _refundMethod = _onBook ? PaymentMethod.StoreCredit : PaymentMethod.Cash;
+    }
+
+    private void Close()
+    {
+        _selected = null;
+        _lines = [];
+        _returnQty.Clear();
+    }
+
+    private void Step(ReturnableLine line, int delta)
+    {
+        decimal next = Qty(line) + delta;
+        next = Math.Clamp(next, 0m, line.Remaining);
+        _returnQty[line.SaleLineId] = next;
+        _confirming = false;
+        _error = null;
+    }
+
+    private async Task RefundSelectedAsync() => await DoReturnAsync(allowOverdraw: false);
+
+    private async Task RefundSelectedAnywayAsync() => await DoReturnAsync(allowOverdraw: true);
+
+    private async Task DoReturnAsync(bool allowOverdraw)
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        var requests = _lines
+            .Where(l => Qty(l) > 0m)
+            .Select(l => new ReturnRequest(l.SaleLineId, Qty(l)))
+            .ToList();
+
+        if (requests.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await PosSvc.ReturnItemsAsync(
+                _selected.Id, requests, _refundMethod, Session.CurrentCashierId, allowOverdraw);
+            _flash = $"Returned R {SelectedValue:0.00}.";
+            Close();
+            await ReloadSalesAsync();
+        }
+        catch (DrawerShortException ex)
+        {
+            _drawerShort = true;
+            _error = ex.Message + " Take a book credit, or refund anyway.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task VoidWholeAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var reversal = await PosSvc.VoidSaleAsync(_selected.Id, Session.CurrentCashierId);
+            _flash = $"Whole sale refunded: R {-reversal.Sale.Total:0.00}.";
+            Close();
+            await ReloadSalesAsync();
+        }
+        catch (DrawerShortException ex)
+        {
+            _error = ex.Message + " Return items one by one to a book credit instead.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

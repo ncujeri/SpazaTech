@@ -28,4 +28,10 @@ public class SaleLine : Entity, ITenantOwned, IAppendOnly
     public decimal UnitCostSnapshot { get; set; }
 
     public decimal LineTotal { get; set; }
+
+    /// <summary>
+    /// Set on a reversal line to the original line it returns, so partial returns can
+    /// track how much of each original line has already come back to the shelf.
+    /// </summary>
+    public Guid? ReversesSaleLineId { get; set; }
 }

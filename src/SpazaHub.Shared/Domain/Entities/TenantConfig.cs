@@ -35,6 +35,12 @@ public class TenantConfig : Entity, ITenantOwned, IMutableSynced
     /// <summary>Whether cashiers may override a customer credit limit warning.</summary>
     public bool CashiersMayOverrideCreditLimit { get; set; }
 
+    /// <summary>
+    /// Whether a cashier may process refunds and voids. Off by default: returns move
+    /// cash out of the drawer, so the owner opts in per shop.
+    /// </summary>
+    public bool CashiersMayDoReturns { get; set; }
+
     /// <summary>Conservative default: at most one automated reminder per debtor per week.</summary>
     public int MaxRemindersPerDebtorPerWeek { get; set; } = 1;
 

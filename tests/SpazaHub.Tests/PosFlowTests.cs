@@ -52,7 +52,7 @@ public class PosFlowTests : IDisposable
     {
         var persistence = new OpfsDbPersistence(new StubJsRuntime(), NullLogger<OpfsDbPersistence>.Instance);
         _store = new LocalStore(_factory, persistence, NullLogger<LocalStore>.Instance);
-        _pos = new PosService(_store, _factory);
+        _pos = new PosService(_store, _factory, new CashUpService(_store, _factory));
         _inventory = new InventoryService(_store, _factory);
         _quickRing = new QuickRingService(_factory);
 
@@ -175,6 +175,67 @@ public class PosFlowTests : IDisposable
 
         // Voiding twice is refused.
         await Assert.ThrowsAsync<InvalidOperationException>(() => _pos.VoidSaleAsync(completed.Sale.Id));
+    }
+
+    [Fact]
+    public async Task ReturnItems_PartialCashRefund_RestocksAndTracksRemaining()
+    {
+        var product = await CreateProductAsync("Beer 6pack", 12m);
+        await _inventory.ReceiveGoodsAsync(product.Id, 10m, 9m);
+
+        var (completed, _) = await _pos.CompleteSaleAsync(
+            [new CartLine(product.Id, "Beer 6pack", 6m, 12m, 9m)], []);
+        var lineId = completed.Lines.Single().Id;
+
+        // Bring back 2 of the 6.
+        var reversal = await _pos.ReturnItemsAsync(
+            completed.Sale.Id, [new ReturnRequest(lineId, 2m)], PaymentMethod.Cash);
+
+        Assert.Equal(completed.Sale.Id, reversal.Sale.ReversesSaleId);
+
+        await using (var db = _factory.CreateDbContext())
+        {
+            // Sold 6 from 10, then 2 back: 6 on the shelf.
+            Assert.Equal(6m, (await db.Products.SingleAsync()).CachedQuantity);
+            var refund = await db.CashMovements.SingleAsync(m => m.Type == CashMovementType.CashRefund);
+            Assert.Equal(-24m, refund.Amount);
+        }
+
+        // 4 remain returnable; a bigger return is refused.
+        var returnable = await _pos.GetReturnableLinesAsync(completed.Sale.Id);
+        Assert.Equal(4m, returnable.Single().Remaining);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _pos.ReturnItemsAsync(
+            completed.Sale.Id, [new ReturnRequest(lineId, 5m)], PaymentMethod.Cash));
+
+        // Return the last 4; nothing left to return.
+        await _pos.ReturnItemsAsync(completed.Sale.Id, [new ReturnRequest(lineId, 4m)], PaymentMethod.Cash);
+        var afterAll = await _pos.GetReturnableLinesAsync(completed.Sale.Id);
+        Assert.Equal(0m, afterAll.Single().Remaining);
+    }
+
+    [Fact]
+    public async Task ReturnItems_CashRefundGuardedWhenDrawerCannotCoverIt()
+    {
+        var product = await CreateProductAsync("Phone charger", 100m);
+        await _inventory.ReceiveGoodsAsync(product.Id, 5m, 70m);
+
+        // Paid fully by card: no cash entered the drawer.
+        var (completed, _) = await _pos.CompleteSaleAsync(
+            [new CartLine(product.Id, "Phone charger", 1m, 100m, 70m)],
+            [new TenderInput(PaymentMethod.Card, 100m)]);
+        var lineId = completed.Lines.Single().Id;
+
+        // A cash refund would overdraw the empty drawer.
+        await Assert.ThrowsAsync<DrawerShortException>(() => _pos.ReturnItemsAsync(
+            completed.Sale.Id, [new ReturnRequest(lineId, 1m)], PaymentMethod.Cash));
+
+        // The owner can still force it through.
+        await _pos.ReturnItemsAsync(
+            completed.Sale.Id, [new ReturnRequest(lineId, 1m)], PaymentMethod.Cash, allowDrawerOverdraw: true);
+
+        await using var db = _factory.CreateDbContext();
+        Assert.Equal(5m, (await db.Products.SingleAsync()).CachedQuantity);
     }
 
     [Fact]

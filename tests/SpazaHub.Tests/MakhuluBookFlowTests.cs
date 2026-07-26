@@ -54,7 +54,7 @@ public class MakhuluBookFlowTests : IDisposable
         var persistence = new OpfsDbPersistence(new StubJsRuntime(), NullLogger<OpfsDbPersistence>.Instance);
         _store = new LocalStore(_factory, persistence, NullLogger<LocalStore>.Instance);
         _book = new CustomerService(_store, _factory);
-        _pos = new PosService(_store, _factory);
+        _pos = new PosService(_store, _factory, new CashUpService(_store, _factory));
         _inventory = new InventoryService(_store, _factory);
         _stockTake = new StockTakeService(_store, _factory);
 
@@ -120,6 +120,51 @@ public class MakhuluBookFlowTests : IDisposable
 
         // Stock still moved like any sale.
         Assert.Equal(8m, (await db.Products.SingleAsync()).CachedQuantity);
+    }
+
+    [Fact]
+    public async Task ReturnOnBookSale_CreditsTheLedgerBackDown()
+    {
+        var customer = await AddCustomerAsync("Sipho");
+        var product = new Product { Name = "Bread", SellPrice = 18.50m };
+        await _inventory.SaveProductAsync(product);
+        await _inventory.ReceiveGoodsAsync(product.Id, 10m, 14m);
+
+        var (completed, _) = await _pos.CompleteSaleOnBookAsync(
+            [new CartLine(product.Id, "Bread", 2m, 18.50m, 14m)], customer.Id);
+        Assert.Equal(37m, await _book.GetBalanceAsync(customer.Id));
+
+        // Return one loaf onto the book: no cash moves, the balance halves.
+        var lineId = completed.Lines.Single().Id;
+        await _pos.ReturnItemsAsync(
+            completed.Sale.Id, [new ReturnRequest(lineId, 1m)], PaymentMethod.StoreCredit);
+
+        Assert.Equal(18.50m, await _book.GetBalanceAsync(customer.Id));
+
+        await using var db = _factory.CreateDbContext();
+        Assert.Equal(0, await db.CashMovements.CountAsync());
+        Assert.Equal(9m, (await db.Products.SingleAsync()).CachedQuantity);
+    }
+
+    [Fact]
+    public async Task VoidOnBookSale_ClearsTheWholeDebt()
+    {
+        var customer = await AddCustomerAsync("Nomsa");
+        var product = new Product { Name = "Sugar 2kg", SellPrice = 40m };
+        await _inventory.SaveProductAsync(product);
+        await _inventory.ReceiveGoodsAsync(product.Id, 6m, 30m);
+
+        var (completed, _) = await _pos.CompleteSaleOnBookAsync(
+            [new CartLine(product.Id, "Sugar 2kg", 1m, 40m, 30m)], customer.Id);
+        Assert.Equal(40m, await _book.GetBalanceAsync(customer.Id));
+
+        await _pos.VoidSaleAsync(completed.Sale.Id);
+
+        // Whole debt cleared, no cash refund, stock back.
+        Assert.Equal(0m, await _book.GetBalanceAsync(customer.Id));
+        await using var db = _factory.CreateDbContext();
+        Assert.Equal(0, await db.CashMovements.CountAsync());
+        Assert.Equal(6m, (await db.Products.SingleAsync()).CachedQuantity);
     }
 
     [Fact]

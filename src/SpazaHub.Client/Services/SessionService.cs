@@ -112,6 +112,45 @@ public class SessionService
         return true;
     }
 
+    /// <summary>
+    /// Whether the person on shift may process returns. The owner always can; a cashier
+    /// only when the owner has switched on returns for this shop.
+    /// </summary>
+    public async Task<bool> CanDoReturnsAsync()
+    {
+        if (IsOwner)
+        {
+            return true;
+        }
+
+        return await GetCashiersMayDoReturnsAsync();
+    }
+
+    /// <summary>The shop setting: whether cashiers are allowed to do returns.</summary>
+    public async Task<bool> GetCashiersMayDoReturnsAsync()
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        var config = await db.TenantConfigs.AsNoTracking().FirstOrDefaultAsync();
+        return config?.CashiersMayDoReturns ?? false;
+    }
+
+    /// <summary>Owner turns cashier returns on or off for the shop.</summary>
+    public async Task SetCashiersMayDoReturnsAsync(bool allowed)
+    {
+        if (!IsOwner)
+        {
+            throw new InvalidOperationException("Only the owner changes who may do returns.");
+        }
+
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        var config = await db.TenantConfigs.AsNoTracking().FirstOrDefaultAsync()
+            ?? new TenantConfig();
+
+        config.CashiersMayDoReturns = allowed;
+        config.UpdatedAtUtc = DateTime.UtcNow;
+        await _store.SaveLocalWriteAsync(config);
+    }
+
     /// <summary>True when no owner PIN has been set yet on this shop.</summary>
     public async Task<bool> OwnerPinMissingAsync()
     {
