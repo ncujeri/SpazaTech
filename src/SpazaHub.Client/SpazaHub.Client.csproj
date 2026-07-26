@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+    <!-- EF Core Sqlite needs the native e_sqlite3 library compiled into the WebAssembly
+         build. That native relink is skipped by default in Debug/`dotnet run`, which makes
+         Microsoft.Data.Sqlite throw DllNotFoundException("e_sqlite3") at runtime. Forcing it
+         on (requires the wasm-tools workload) links e_sqlite3 into every build, dev included. -->
+    <WasmBuildNative>true</WasmBuildNative>
   </PropertyGroup>
 
   <ItemGroup>

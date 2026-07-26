@@ -424,6 +424,11 @@ h2 { font-size: 1.05rem; margin: 18px 0 8px; color: var(--ink); }
 
 .form-actions { display: flex; gap: 8px; margin-top: 10px; }
 
+/* Barcode field paired with its camera-scan button. */
+.barcode-row { display: flex; gap: 8px; align-items: stretch; }
+.barcode-row .big-input { flex: 1; }
+.barcode-row .big-btn { flex: 0 0 auto; }
+
 .product-list { margin-top: 6px; }
 
 .product-row {
@@ -464,8 +469,50 @@ h2 { font-size: 1.05rem; margin: 18px 0 8px; color: var(--ink); }
     gap: 12px;
 }
 
-.scan-overlay video { width: 100%; max-width: 480px; border-radius: var(--radius); border: 3px solid var(--brand); }
-.scan-overlay .big-btn { max-width: 480px; }
+/* The camera preview and a framing guide drawn over it. The reticle box dims the
+   surrounding image so the shopkeeper knows exactly where to hold the barcode. */
+.scan-viewport {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    overflow: hidden;
+    border-radius: var(--radius);
+    border: 3px solid var(--brand);
+    line-height: 0;
+}
+
+.scan-viewport video { width: 100%; display: block; }
+
+.scan-reticle {
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    top: 50%;
+    height: 40%;
+    transform: translateY(-50%);
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    border-radius: 10px;
+    box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+/* A red centre line to aim across the bars, the way hardware scanners do. */
+.scan-reticle::after {
+    content: "";
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    background: #e63946;
+    box-shadow: 0 0 6px 1px rgba(230, 57, 70, 0.8);
+}
+
+.scan-hint { color: rgba(255, 255, 255, 0.9); margin: 0; text-align: center; }
+
+.scan-controls { display: flex; gap: 8px; width: 100%; max-width: 480px; }
+.scan-controls .big-btn { flex: 1; }
 
 /* ---- Boot screen and error bar (Blazor plumbing) ---- */
 

@@ -50,6 +50,22 @@ cd src/SpazaHub.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run
 ```
 
+#### Seeding demo data
+
+To skip the manual walk-through, seed one fully-populated shop (20 products with stock, 2 cashiers, 5 Makhulu Book customers, and a fortnight of sales). Idempotent — safe to re-run.
+
+```bash
+# SQLite dev database (spazahub-dev.db)
+dotnet run --project src/SpazaHub.Api -- seed
+
+# SQL Server (Spazahub, from appsettings.json)
+ASPNETCORE_ENVIRONMENT=Production dotnet run --project src/SpazaHub.Api -- seed
+```
+
+On Windows, `.\seed-db.ps1` (add `-SqlServer` for the SQL Server target) wraps the same commands, or use the `seed` / `seed-sqlserver` launch profiles.
+
+Demo owner: phone `+27821234567`, owner PIN `4321`. Cashiers: Nomsa (PIN `1111`), Sipho (PIN `2222`). Sign in via the OTP flow below (the OTP prints to the API console).
+
 Then walk the auth flow (Swagger UI is at `/swagger`):
 
 1. `POST /api/auth/register-owner` with `{"phone":"0821234567","shopName":"Mama Thoko Spaza"}`. The OTP appears in the API console log (dev SMS provider).

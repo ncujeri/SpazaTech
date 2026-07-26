@@ -15,7 +15,10 @@ string? configuredApi = builder.Configuration["ApiBaseUrl"];
 string apiBaseUrl = string.IsNullOrWhiteSpace(configuredApi)
     ? builder.HostEnvironment.BaseAddress
     : configuredApi;
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
+// Singleton, not scoped: the services that consume it (SyncApiClient, AuthApiClient) are
+// singletons, and Blazor WASM runs in a single app scope so there is no per-request scope
+// to align with. A scoped HttpClient cannot be consumed by a singleton and fails at startup.
+builder.Services.AddSingleton(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
 
 builder.Services.AddDbContextFactory<ClientDbContext>(options =>
     options.UseSqlite($"Data Source={OpfsDbPersistence.DatabaseFileName}"));

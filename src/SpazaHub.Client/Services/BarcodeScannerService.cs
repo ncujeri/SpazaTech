@@ -9,6 +9,10 @@ namespace SpazaHub.Client.Services;
 /// </summary>
 public class BarcodeScannerService : IAsyncDisposable
 {
+    // The ?v= query is a cache-buster for the ES module: bump it whenever barcode.js
+    // changes so the browser fetches the new file instead of a sticky cached copy.
+    private const string ModuleUrl = "./js/barcode.js?v=5";
+
     private readonly IJSRuntime _js;
     private IJSObjectReference? _module;
     private DotNetObjectReference<BarcodeScannerService>? _selfRef;
@@ -23,7 +27,7 @@ public class BarcodeScannerService : IAsyncDisposable
 
     public async Task StartAsync(string videoElementId)
     {
-        _module ??= await _js.InvokeAsync<IJSObjectReference>("import", "./js/barcode.js");
+        _module ??= await _js.InvokeAsync<IJSObjectReference>("import", ModuleUrl);
         _selfRef ??= DotNetObjectReference.Create(this);
         await _module.InvokeVoidAsync("start", videoElementId, _selfRef);
     }
@@ -36,10 +40,32 @@ public class BarcodeScannerService : IAsyncDisposable
         }
     }
 
+    /// <summary>True when the live camera can toggle its flash (mostly phone rear cameras).</summary>
+    public async Task<bool> IsTorchAvailableAsync()
+    {
+        if (_module is null)
+        {
+            return false;
+        }
+
+        return await _module.InvokeAsync<bool>("torchAvailable");
+    }
+
+    /// <summary>Turns the camera flash on or off; returns false if the camera has no torch.</summary>
+    public async Task<bool> SetTorchAsync(bool on)
+    {
+        if (_module is null)
+        {
+            return false;
+        }
+
+        return await _module.InvokeAsync<bool>("setTorch", on);
+    }
+
     /// <summary>Starts listening for Bluetooth keyboard-wedge scanner bursts.</summary>
     public async Task StartWedgeAsync()
     {
-        _module ??= await _js.InvokeAsync<IJSObjectReference>("import", "./js/barcode.js");
+        _module ??= await _js.InvokeAsync<IJSObjectReference>("import", ModuleUrl);
         _selfRef ??= DotNetObjectReference.Create(this);
         await _module.InvokeVoidAsync("startWedge", _selfRef);
     }

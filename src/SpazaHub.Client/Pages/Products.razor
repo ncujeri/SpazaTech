@@ -2,8 +2,10 @@
 @using SpazaHub.Client.Services
 @using SpazaHub.Domain.Entities
 @using SpazaHub.Domain.Enums
+@implements IAsyncDisposable
 @inject AuthApiClient Auth
 @inject InventoryService Inventory
+@inject BarcodeScannerService Scanner
 @inject SessionService Session
 @inject NavigationManager Nav
 
@@ -17,9 +19,30 @@
             {
                 <button class="big-btn small" @onclick='() => Nav.NavigateTo("/stocktake")'>Count stock</button>
             }
+            <button class="big-btn small" @onclick="StartScanAsync">📷 Scan</button>
             <button class="big-btn primary" @onclick="NewProduct">+ New product</button>
         </div>
     </div>
+
+    @if (_scanning)
+    {
+        <div class="scan-overlay">
+            <div class="scan-viewport">
+                <video id="products-video" playsinline muted></video>
+                <div class="scan-reticle"></div>
+            </div>
+            <p class="scan-hint">Line the barcode up inside the box</p>
+            <div class="scan-controls">
+                @if (_torchAvailable)
+                {
+                    <button class="big-btn @(_torchOn ? "primary" : "")" @onclick="ToggleTorchAsync">
+                        🔦 @(_torchOn ? "Light on" : "Light")
+                    </button>
+                }
+                <button class="big-btn" @onclick="StopScanAsync">Close</button>
+            </div>
+        </div>
+    }
 
     <input class="big-input" type="search" placeholder="Search name or barcode"
            @bind="_search" @bind:event="oninput" />
@@ -53,7 +76,10 @@
             <input class="big-input" @bind="_editing.Name" />
 
             <label class="big-label">Barcode (scan or type)</label>
-            <input class="big-input" @bind="_editing.Barcode" />
+            <div class="barcode-row">
+                <input class="big-input" @bind="_editing.Barcode" />
+                <button class="big-btn small" type="button" @onclick="StartScanAsync">📷</button>
+            </div>
 
             <label class="big-label">Sell price (R)</label>
             <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_editing.SellPrice" />
@@ -138,6 +164,9 @@
     private DateOnly? _stockExpiry;
     private string _search = string.Empty;
     private bool _confirmingWaste;
+    private bool _scanning;
+    private bool _torchAvailable;
+    private bool _torchOn;
     private (Guid ProductId, string Name, decimal Quantity)? _undoWaste;
 
     private IEnumerable<Product> VisibleProducts
@@ -158,6 +187,10 @@
             return;
         }
 
+        // A plugged-in Bluetooth scanner types like a keyboard, so listen for its
+        // bursts anywhere on the page; the camera is only opened on demand.
+        Scanner.BarcodeDetected += OnBarcodeDetected;
+        await Scanner.StartWedgeAsync();
         await ReloadAsync();
     }
 
@@ -244,5 +277,72 @@
         _stockProduct = null;
         _confirmingWaste = false;
         await ReloadAsync();
+    }
+
+    private async Task StartScanAsync()
+    {
+        _scanning = true;
+        _torchOn = false;
+        _torchAvailable = false;
+        StateHasChanged();
+        await Task.Yield();
+        await Scanner.StartAsync("products-video");
+        // Only known once the camera is live; phones with a rear flash expose it.
+        _torchAvailable = await Scanner.IsTorchAvailableAsync();
+        StateHasChanged();
+    }
+
+    private async Task ToggleTorchAsync()
+    {
+        _torchOn = !_torchOn;
+        await Scanner.SetTorchAsync(_torchOn);
+    }
+
+    private async Task StopScanAsync()
+    {
+        _scanning = false;
+        _torchOn = false;
+        await Scanner.StopAsync();
+    }
+
+    private void OnBarcodeDetected(string barcode)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (_scanning)
+            {
+                _scanning = false;
+                await Scanner.StopAsync();
+            }
+
+            if (_editing is not null)
+            {
+                // A product form is open: drop the scanned code straight into the field.
+                _editing.Barcode = barcode;
+            }
+            else
+            {
+                // Known item -> open it for editing/receiving; unknown -> start a new
+                // product with the barcode already filled so the owner just names it.
+                var product = await Inventory.FindByBarcodeAsync(barcode);
+                if (product is not null)
+                {
+                    Edit(product);
+                }
+                else
+                {
+                    _editing = new Product { Barcode = barcode };
+                }
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Scanner.BarcodeDetected -= OnBarcodeDetected;
+        await Scanner.StopWedgeAsync();
+        await Scanner.StopAsync();
     }
 }

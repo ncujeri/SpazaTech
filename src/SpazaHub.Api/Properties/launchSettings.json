@@ -36,6 +36,22 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "seed": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "commandLineArgs": "seed",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "seed-sqlserver": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "commandLineArgs": "seed",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Production"
+      }
     }
   }
 }

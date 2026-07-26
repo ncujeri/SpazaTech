@@ -44,8 +44,20 @@ else
         @if (_scanning)
         {
             <div class="scan-overlay">
-                <video id="pos-video" playsinline muted></video>
-                <button class="big-btn" @onclick="StopScanAsync">Close</button>
+                <div class="scan-viewport">
+                    <video id="pos-video" playsinline muted></video>
+                    <div class="scan-reticle"></div>
+                </div>
+                <p class="scan-hint">Line the barcode up inside the box</p>
+                <div class="scan-controls">
+                    @if (_torchAvailable)
+                    {
+                        <button class="big-btn @(_torchOn ? "primary" : "")" @onclick="ToggleTorchAsync">
+                            🔦 @(_torchOn ? "Light on" : "Light")
+                        </button>
+                    }
+                    <button class="big-btn" @onclick="StopScanAsync">Close</button>
+                </div>
             </div>
         }
 
@@ -221,6 +233,8 @@ else
     private decimal _looseAmount;
     private bool _tendering;
     private bool _scanning;
+    private bool _torchAvailable;
+    private bool _torchOn;
     private PaymentMethod _splitMethod = PaymentMethod.Card;
     private decimal _splitAmount;
     private string? _flash;
@@ -431,14 +445,26 @@ else
     private async Task StartScanAsync()
     {
         _scanning = true;
+        _torchOn = false;
+        _torchAvailable = false;
         StateHasChanged();
         await Task.Yield();
         await Scanner.StartAsync("pos-video");
+        // Only known once the camera is live; phones with a rear flash expose it.
+        _torchAvailable = await Scanner.IsTorchAvailableAsync();
+        StateHasChanged();
+    }
+
+    private async Task ToggleTorchAsync()
+    {
+        _torchOn = !_torchOn;
+        await Scanner.SetTorchAsync(_torchOn);
     }
 
     private async Task StopScanAsync()
     {
         _scanning = false;
+        _torchOn = false;
         await Scanner.StopAsync();
     }
 

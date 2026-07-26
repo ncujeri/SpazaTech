@@ -65,6 +65,14 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// Dev data seeding: `dotnet run --project src/SpazaHub.Api -- seed` populates the
+// configured database with one demo shop and exits. Idempotent and safe to re-run.
+if (args.Contains("seed", StringComparer.OrdinalIgnoreCase))
+{
+    await SpazaHub.Api.Persistence.DbSeeder.RunAsync(app.Services);
+    return;
+}
+
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
