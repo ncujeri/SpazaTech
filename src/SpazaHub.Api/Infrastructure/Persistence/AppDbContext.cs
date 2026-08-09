@@ -42,6 +42,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
     public DbSet<Cashier> Cashiers => Set<Cashier>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleLine> SaleLines => Set<SaleLine>();
     public DbSet<SalePayment> SalePayments => Set<SalePayment>();
@@ -88,6 +89,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
             e.Property(p => p.WeightedAverageCost).HasPrecision(18, 4);
             e.Property(p => p.CachedQuantity).HasPrecision(18, 3);
             e.Property(p => p.LowStockThreshold).HasPrecision(18, 3);
+        });
+
+        builder.Entity<ProductBarcode>(e =>
+        {
+            e.Property(b => b.Code).HasMaxLength(64);
+            e.Property(b => b.UnitsPerScan).HasPrecision(18, 3);
+            // Not unique: a duplicate code created offline on two devices must still sync in
+            // rather than throw a constraint at push; the app guards against duplicates.
+            e.HasIndex(b => new { b.TenantId, b.Code });
+            e.HasIndex(b => b.ProductId);
         });
 
         builder.Entity<Sale>(e =>

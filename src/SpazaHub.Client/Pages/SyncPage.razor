@@ -1,0 +1,293 @@
+@page "/sync"
+@using SpazaHub.Client.Services
+@using SpazaHub.Client.Sync
+@using SpazaHub.Shared.Sync
+@implements IDisposable
+@inject LocalStore Store
+@inject BackgroundSyncService Sync
+@inject AccessTokenStore Tokens
+@inject SessionService Session
+@inject AuthApiClient Auth
+@inject NavigationManager Nav
+
+<PageTitle>Sync</PageTitle>
+
+<div class="sync-page">
+    <h1>Sync</h1>
+
+    <div class="sync-status-card @_statusClass">
+        <div class="sync-status-head">
+            <span class="sync-dot"></span>
+            <span class="sync-status-text">@_statusText</span>
+        </div>
+        <p class="sync-sub">@_subText</p>
+    </div>
+
+    <button class="big-btn primary" @onclick="SyncNowAsync" disabled="@(Sync.IsSyncing || !CanReconnect)">
+        @(Sync.IsSyncing ? "Syncing…" : (Tokens.HasToken ? "Sync now" : "Reconnect & sync"))
+    </button>
+
+    @if (_items.Count == 0)
+    {
+        @if (!CanReconnect)
+        {
+            <p class="page-hint">This phone hasn't been signed in yet. Sales are saved here and
+                will sync once you sign in on it.</p>
+        }
+        else
+        {
+            <p class="page-hint">Everything on this phone is saved to the cloud. Nothing is waiting.</p>
+        }
+    }
+
+    @if (_items.Count > 0)
+    {
+        <h2>Waiting to sync</h2>
+        <div class="sync-summary">
+            @foreach (var group in _items.GroupBy(i => Label(i.EntityType)).OrderByDescending(g => g.Count()))
+            {
+                <span class="sync-tag"><strong>@group.Count()</strong> @group.Key</span>
+            }
+        </div>
+
+        <ul class="sync-list">
+            @foreach (var item in _items)
+            {
+                <li class="sync-item">
+                    <button class="sync-item-head" @onclick="() => Toggle(item.DeviceSequence)">
+                        <span class="sync-item-name">@Label(item.EntityType)</span>
+                        <span class="sync-item-time">@Ago(item.ClientTimestampUtc)</span>
+                    </button>
+
+                    @if (_expanded.Contains(item.DeviceSequence))
+                    {
+                        <div class="sync-item-detail">
+                            <dl>
+                                <dt>Type</dt><dd>@item.EntityType</dd>
+                                <dt>Reference</dt><dd>@item.EntityId.ToString()[..8]</dd>
+                                <dt>Queue #</dt><dd>@item.DeviceSequence</dd>
+                                <dt>Created</dt><dd>@item.ClientTimestampUtc.ToLocalTime().ToString("d MMM HH:mm")</dd>
+                            </dl>
+                            <pre class="sync-payload">@Peek(item.PayloadJson)</pre>
+
+                            @if (Session.IsOwner)
+                            {
+                                @if (_confirmDiscard == item.DeviceSequence)
+                                {
+                                    <div class="sync-confirm">
+                                        <p>Discard this change? It will <strong>not</strong> be sent to
+                                            the cloud or other phones. The record stays on this phone only.</p>
+                                        <div class="split-row">
+                                            <button class="big-btn small" @onclick="() => _confirmDiscard = null">Cancel</button>
+                                            <button class="big-btn small danger" @onclick="() => DiscardAsync(item.DeviceSequence)">Discard</button>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <button class="sync-discard-link" @onclick="() => _confirmDiscard = item.DeviceSequence">
+                                        Discard this change
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+
+        @if (_capped)
+        {
+            <p class="page-hint">Showing the first @Cap changes. The rest will sync in order too.</p>
+        }
+    }
+</div>
+
+@code {
+    private const int Cap = 500;
+
+    private IReadOnlyList<SyncItemDto> _items = [];
+    private readonly HashSet<long> _expanded = [];
+    private long? _confirmDiscard;
+    private bool _capped;
+
+    private string _statusClass = "";
+    private string _statusText = "";
+    private string _subText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        Sync.StatusChanged += OnStatusChanged;
+        await ReloadAsync();
+    }
+
+    private void OnStatusChanged() => _ = InvokeAsync(async () =>
+    {
+        // A background cycle finished: pending rows may have cleared, so reload.
+        if (!Sync.IsSyncing)
+        {
+            await ReloadAsync();
+        }
+        else
+        {
+            UpdateStatus();
+            StateHasChanged();
+        }
+    });
+
+    private async Task ReloadAsync()
+    {
+        var items = await Store.GetPendingItemsAsync(Cap);
+        _capped = items.Count >= Cap;
+        _items = items;
+        // Drop stale expand/confirm state for rows that are gone.
+        _expanded.RemoveWhere(seq => !_items.Any(i => i.DeviceSequence == seq));
+        if (_confirmDiscard is long c && !_items.Any(i => i.DeviceSequence == c))
+        {
+            _confirmDiscard = null;
+        }
+
+        UpdateStatus();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// True when the device has some way to reach the server: a live access token, or a
+    /// durable refresh token it can exchange for one. False only for a never-signed-in
+    /// (demo) device, which is genuinely local-only.
+    /// </summary>
+    private bool CanReconnect => Tokens.HasToken || Auth.RefreshToken is not null;
+
+    private string PendingLabel()
+        => _items.Count == 1 ? "1 change waiting" : $"{_items.Count} changes waiting";
+
+    private void UpdateStatus()
+    {
+        if (Sync.IsSyncing)
+        {
+            _statusClass = _items.Count > 0 ? "pending" : "ok";
+            _statusText = _items.Count > 0 ? PendingLabel() : "Syncing";
+            _subText = "Syncing now…";
+            return;
+        }
+
+        if (!CanReconnect)
+        {
+            // Never signed in on this device (demo): local-only by design.
+            _statusClass = "local";
+            _statusText = "On this phone only";
+            _subText = "Not signed in on this phone yet.";
+            return;
+        }
+
+        if (!Tokens.HasToken)
+        {
+            // Signed in on this device, but not connected to the server right now.
+            _statusClass = "pending";
+            _statusText = _items.Count > 0 ? PendingLabel() : "Offline";
+            _subText = Sync.LastError ?? "Not connected. Tap Reconnect & sync to try now.";
+            return;
+        }
+
+        if (_items.Count > 0)
+        {
+            _statusClass = "pending";
+            _statusText = PendingLabel();
+            _subText = Sync.LastError ?? LastSyncedLine() ?? "Waiting for the next sync.";
+            return;
+        }
+
+        _statusClass = "ok";
+        _statusText = "All synced";
+        _subText = LastSyncedLine() ?? "Up to date.";
+    }
+
+    private string? LastSyncedLine()
+        => Sync.LastSyncedAtUtc is DateTimeOffset t ? $"Last synced {Ago(t.UtcDateTime)}" : null;
+
+    private async Task SyncNowAsync()
+    {
+        UpdateStatus();
+        StateHasChanged();
+        await Sync.SyncNowAsync();
+        await ReloadAsync();
+    }
+
+    private void Toggle(long sequence)
+    {
+        if (!_expanded.Remove(sequence))
+        {
+            _expanded.Add(sequence);
+        }
+
+        _confirmDiscard = null;
+    }
+
+    private async Task DiscardAsync(long sequence)
+    {
+        await Store.DiscardPendingAsync(sequence);
+        _confirmDiscard = null;
+        await ReloadAsync();
+    }
+
+    /// <summary>Human label for a sync entity type; falls back to the raw name.</summary>
+    private static string Label(string entityType) => entityType switch
+    {
+        "Sale" => "Sale",
+        "SaleLine" => "Sale item",
+        "SalePayment" => "Payment",
+        "StockMovement" => "Stock update",
+        "CreditEntry" => "Book entry",
+        "CashMovement" => "Cash movement",
+        "CashbackTransaction" => "Cashback",
+        "FeeIncome" => "Fee",
+        "WalletMovement" => "Wallet",
+        "Product" => "Product",
+        "Customer" => "Customer",
+        "TenantConfig" => "Settings",
+        "CashUp" => "Cash-up",
+        "Cashier" => "Cashier",
+        "CustomerMessage" => "Message",
+        "TenantWallet" => "Wallet",
+        _ => entityType
+    };
+
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        if (span < TimeSpan.Zero)
+        {
+            return "just now";
+        }
+
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "just now";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min ago";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            return $"{(int)span.TotalHours} h ago";
+        }
+
+        return $"{(int)span.TotalDays} days ago";
+    }
+
+    private static string Peek(string json)
+        => json.Length <= 240 ? json : json[..240] + "…";
+
+    public void Dispose() => Sync.StatusChanged -= OnStatusChanged;
+}

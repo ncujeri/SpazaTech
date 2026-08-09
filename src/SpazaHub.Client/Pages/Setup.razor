@@ -1,6 +1,7 @@
 @page "/setup"
 @using SpazaHub.Client.Services
 @inject AuthApiClient Auth
+@inject DemoDataService DemoData
 @inject NavigationManager Nav
 
 <PageTitle>SpazaHub setup</PageTitle>
@@ -32,6 +33,26 @@
     {
         <p class="error-text">@_error</p>
     }
+
+    <div class="setup-reset">
+        @if (!_confirmingReset)
+        {
+            <button class="link-btn" @onclick="() => _confirmingReset = true" disabled="@_busy">Clear local data on this device</button>
+        }
+        else
+        {
+            <p class="reset-warn">This deletes all products and stock movements saved on this phone. Anything not yet synced is lost. Your login and settings stay. Continue?</p>
+            <div class="reset-actions">
+                <button class="big-btn danger" @onclick="ResetAsync" disabled="@_busy">Yes, clear it</button>
+                <button class="big-btn" @onclick="() => _confirmingReset = false" disabled="@_busy">Cancel</button>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_resetMessage))
+        {
+            <p class="page-hint">@_resetMessage</p>
+        }
+    </div>
 </div>
 
 @code {
@@ -43,6 +64,8 @@
     private string _code = string.Empty;
     private string? _error;
     private bool _busy;
+    private bool _confirmingReset;
+    private string? _resetMessage;
 
     private async Task RequestOtpAsync()
     {
@@ -99,5 +122,13 @@
         _busy = true;
         await Auth.StartDemoModeAsync();
         Nav.NavigateTo("/pos");
+    }
+
+    private async Task ResetAsync()
+    {
+        _busy = true;
+        _resetMessage = await DemoData.ClearAsync();
+        _confirmingReset = false;
+        _busy = false;
     }
 }

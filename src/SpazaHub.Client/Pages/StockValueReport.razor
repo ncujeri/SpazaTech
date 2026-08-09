@@ -1,0 +1,135 @@
+@page "/reports/stock-value"
+@using SpazaHub.Client.Services
+@inject AuthApiClient Auth
+@inject ReportService Reports
+@inject SessionService Session
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Stock value</PageTitle>
+
+<div class="report-page">
+    <div class="report-actions no-print">
+        <button class="big-btn small" @onclick='() => Nav.NavigateTo("/report")'>← Back</button>
+        <button class="big-btn primary" @onclick="DownloadPdfAsync">📄 Download PDF</button>
+    </div>
+
+    <div class="print-doc">
+        <div class="doc-head">
+            <div>
+                <h1>Stock on hand</h1>
+                <p class="doc-sub">What is on the shelf and what it is worth</p>
+            </div>
+            <div class="doc-meta">
+                @if (!string.IsNullOrWhiteSpace(_shopName))
+                {
+                    <div class="doc-shop">@_shopName</div>
+                }
+                <div>@DateTime.Now.ToString("dddd, dd MMM yyyy HH:mm")</div>
+            </div>
+        </div>
+
+        @if (_report is null)
+        {
+            <p class="page-hint">Loading…</p>
+        }
+        else
+        {
+            <div class="doc-totals">
+                <div class="doc-total">
+                    <span class="doc-total-label">Value at cost</span>
+                    <span class="doc-total-value">R @_report.TotalCostValue.ToString("0.00")</span>
+                </div>
+                <div class="doc-total">
+                    <span class="doc-total-label">Value at retail</span>
+                    <span class="doc-total-value">R @_report.TotalRetailValue.ToString("0.00")</span>
+                </div>
+                <div class="doc-total">
+                    <span class="doc-total-label">Margin in stock</span>
+                    <span class="doc-total-value">R @_report.PotentialMargin.ToString("0.00")</span>
+                </div>
+            </div>
+
+            @if (_report.LineCount == 0)
+            {
+                <p class="page-hint">No stock on hand.</p>
+            }
+            else
+            {
+                <div class="doc-table-wrap">
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th class="num">On hand</th>
+                            <th class="num">Unit cost</th>
+                            <th class="num">Cost value</th>
+                            <th class="num">Sell price</th>
+                            <th class="num">Retail value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _report.Lines)
+                        {
+                            <tr>
+                                <td>@line.ProductName</td>
+                                <td class="num">@line.OnHand.ToString("0.###")</td>
+                                <td class="num">R @line.UnitCost.ToString("0.00")</td>
+                                <td class="num strong">R @line.CostValue.ToString("0.00")</td>
+                                <td class="num">R @line.SellPrice.ToString("0.00")</td>
+                                <td class="num">R @line.RetailValue.ToString("0.00")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>@_report.LineCount @(_report.LineCount == 1 ? "item" : "items")</td>
+                            <td class="num"></td>
+                            <td class="num"></td>
+                            <td class="num strong">R @_report.TotalCostValue.ToString("0.00")</td>
+                            <td class="num"></td>
+                            <td class="num strong">R @_report.TotalRetailValue.ToString("0.00")</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
+
+                @if (_report.OutOfStockCount > 0)
+                {
+                    <p class="doc-foot">@_report.OutOfStockCount active @(_report.OutOfStockCount == 1 ? "product is" : "products are") out of stock and not listed. Cost value uses the weighted-average buying price.</p>
+                }
+                else
+                {
+                    <p class="doc-foot">Cost value uses the weighted-average buying price of each item.</p>
+                }
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private StockValuationReport? _report;
+    private string _shopName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        if (!Session.IsOwner)
+        {
+            Nav.NavigateTo("/pos");
+            return;
+        }
+
+        _shopName = await Reports.GetShopNameAsync();
+        _report = await Reports.GetStockValuationAsync();
+    }
+
+    private async Task DownloadPdfAsync() => await JS.InvokeVoidAsync("print");
+}

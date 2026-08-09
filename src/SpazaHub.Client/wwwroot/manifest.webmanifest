@@ -4,9 +4,11 @@
   "id": "./",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#03173d",
+  "orientation": "portrait",
+  "background_color": "#f6f2e8",
+  "theme_color": "#20262e",
   "prefer_related_applications": false,
+  "categories": ["business", "finance", "shopping"],
   "icons": [
     {
       "src": "icon-512.png",

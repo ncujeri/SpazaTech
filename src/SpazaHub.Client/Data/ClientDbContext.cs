@@ -18,6 +18,7 @@ public class ClientDbContext : DbContext
     public DbSet<WalletMovement> WalletMovements => Set<WalletMovement>();
     public DbSet<Cashier> Cashiers => Set<Cashier>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleLine> SaleLines => Set<SaleLine>();
     public DbSet<SalePayment> SalePayments => Set<SalePayment>();
@@ -42,6 +43,12 @@ public class ClientDbContext : DbContext
         {
             e.HasMany(s => s.Lines).WithOne().HasForeignKey(l => l.SaleId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(s => s.Payments).WithOne().HasForeignKey(p => p.SaleId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ProductBarcode>(e =>
+        {
+            e.HasIndex(b => new { b.TenantId, b.Code });
+            e.HasIndex(b => b.ProductId);
         });
 
         builder.Entity<SyncOutboxItem>(e =>

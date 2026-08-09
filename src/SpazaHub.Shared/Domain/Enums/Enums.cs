@@ -91,3 +91,19 @@ public enum VasProductType
     Data = 1,
     Electricity = 2
 }
+
+/// <summary>How a scanned barcode maps onto a product and its sale quantity.</summary>
+public enum BarcodeKind
+{
+    /// <summary>One scan is one sellable unit at the product's price. The common case.</summary>
+    Unit = 0,
+
+    /// <summary>One scan is a case/carton: it moves UnitsPerScan sellable units at once.</summary>
+    Pack = 1,
+
+    /// <summary>
+    /// A variable-measure (scale-printed) label whose barcode carries the price for that
+    /// one item. Code holds the item-reference digits; the price is read from the scan.
+    /// </summary>
+    PriceEmbedded = 2
+}

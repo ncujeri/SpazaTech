@@ -1,0 +1,110 @@
+@page "/reports/order-list"
+@using SpazaHub.Client.Services
+@inject AuthApiClient Auth
+@inject ReportService Reports
+@inject SessionService Session
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Order list</PageTitle>
+
+<div class="report-page">
+    <div class="report-actions no-print">
+        <button class="big-btn small" @onclick='() => Nav.NavigateTo("/report")'>← Back</button>
+        <button class="big-btn primary" @onclick="DownloadPdfAsync">📄 Download PDF</button>
+    </div>
+
+    <div class="print-doc">
+        <div class="doc-head">
+            <div>
+                <h1>Order list</h1>
+                <p class="doc-sub">What to buy on the next cash &amp; carry trip</p>
+            </div>
+            <div class="doc-meta">
+                @if (!string.IsNullOrWhiteSpace(_shopName))
+                {
+                    <div class="doc-shop">@_shopName</div>
+                }
+                <div>@DateTime.Now.ToString("dddd, dd MMM yyyy HH:mm")</div>
+            </div>
+        </div>
+
+        @if (_report is null)
+        {
+            <p class="page-hint">Loading…</p>
+        }
+        else if (_report.ItemCount == 0)
+        {
+            <p class="page-hint">Nothing to order right now — stock covers the next @_report.DaysToCover days.</p>
+        }
+        else
+        {
+            <p class="doc-note">Covers about @_report.DaysToCover days of sales. Suggested amounts round up to whole units.</p>
+
+            <div class="doc-table-wrap">
+            <table class="doc-table">
+                <thead>
+                    <tr>
+                        <th class="tick"></th>
+                        <th>Product</th>
+                        <th class="num">In stock</th>
+                        <th class="num">Sells/day</th>
+                        <th class="num">Buy</th>
+                        <th class="num">Est. cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _report.Lines)
+                    {
+                        <tr>
+                            <td class="tick">☐</td>
+                            <td>@line.ProductName</td>
+                            <td class="num">@line.OnHand.ToString("0.###")</td>
+                            <td class="num">@line.UnitsPerDay.ToString("0.##")</td>
+                            <td class="num strong">@line.SuggestedQuantity.ToString("0")</td>
+                            <td class="num">@(line.UnitCost > 0 ? $"R {line.EstimatedCost:0.00}" : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td class="tick"></td>
+                        <td colspan="3">@_report.ItemCount @(_report.ItemCount == 1 ? "item" : "items") to buy</td>
+                        <td class="num">Take about</td>
+                        <td class="num strong">R @_report.TotalEstimatedCost.ToString("0.00")</td>
+                    </tr>
+                </tfoot>
+            </table>
+            </div>
+
+            <p class="doc-foot">Estimated cost uses each item's last buying price. Actual prices may differ.</p>
+        }
+    </div>
+</div>
+
+@code {
+    private OrderList? _report;
+    private string _shopName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        if (!Session.IsOwner)
+        {
+            Nav.NavigateTo("/pos");
+            return;
+        }
+
+        _shopName = await Reports.GetShopNameAsync();
+        _report = await Reports.GetOrderListAsync();
+    }
+
+    private async Task DownloadPdfAsync() => await JS.InvokeVoidAsync("print");
+}

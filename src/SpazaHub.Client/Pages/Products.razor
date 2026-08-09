@@ -78,8 +78,51 @@
             <label class="big-label">Barcode (scan or type)</label>
             <div class="barcode-row">
                 <input class="big-input" @bind="_editing.Barcode" />
-                <button class="big-btn small" type="button" @onclick="StartScanAsync">📷</button>
+                <button class="big-btn small" type="button" @onclick="ScanIntoPrimaryAsync">📷</button>
             </div>
+
+            @if (!_editingIsNew)
+            {
+                <label class="big-label">More barcodes</label>
+                <p class="page-hint">Other codes for this same item — a box/case code, another supplier's code, or a scale price label.</p>
+
+                @if (_editingBarcodes.Count > 0)
+                {
+                    <div class="barcode-list">
+                        @foreach (var bc in _editingBarcodes)
+                        {
+                            <div class="barcode-item">
+                                <span class="barcode-code">@bc.Code</span>
+                                <span class="barcode-kind">@BarcodeKindLabel(bc)</span>
+                                <button class="big-btn small danger" type="button" @onclick="() => RemoveBarcodeAsync(bc)">✕</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="barcode-add">
+                    <div class="barcode-row">
+                        <input class="big-input" placeholder="Scan or type a code" @bind="_newBarcodeCode" />
+                        <button class="big-btn small" type="button" @onclick="ScanIntoNewAsync">📷</button>
+                    </div>
+                    <select class="big-input" @bind="_newBarcodeKind">
+                        <option value="@BarcodeKind.Unit">Single item</option>
+                        <option value="@BarcodeKind.Pack">Box / case (many units)</option>
+                        <option value="@BarcodeKind.PriceEmbedded">Scale price label</option>
+                    </select>
+                    @if (_newBarcodeKind == BarcodeKind.Pack)
+                    {
+                        <label class="big-label">Units in the box</label>
+                        <input class="big-input" type="number" inputmode="numeric" min="1" step="1" @bind="_newBarcodePackSize" />
+                    }
+                    <button class="big-btn primary" type="button" @onclick="AddBarcodeAsync"
+                            disabled="@(string.IsNullOrWhiteSpace(_newBarcodeCode))">Add barcode</button>
+                    @if (_barcodeFlash is not null)
+                    {
+                        <p class="error-text">@_barcodeFlash</p>
+                    }
+                </div>
+            }
 
             <label class="big-label">Sell price (R)</label>
             <input class="big-input" type="number" inputmode="decimal" step="0.01" min="0" @bind="_editing.SellPrice" />
@@ -136,7 +179,7 @@
         @foreach (var product in VisibleProducts)
         {
             <div class="product-row @(product.LowStockThreshold > 0 && product.CachedQuantity <= product.LowStockThreshold ? "low" : "")">
-                <div class="product-main" @onclick="() => Edit(product)">
+                <div class="product-main" @onclick="() => EditAsync(product)">
                     <span class="product-name">@product.Name</span>
                     <span class="product-price">R @product.SellPrice.ToString("0.00")</span>
                     <span class="product-qty">@product.CachedQuantity.ToString("0.###") in stock</span>
@@ -169,6 +212,14 @@
     private bool _torchOn;
     private (Guid ProductId, string Name, decimal Quantity)? _undoWaste;
 
+    private bool _editingIsNew;
+    private List<ProductBarcode> _editingBarcodes = [];
+    private string _newBarcodeCode = string.Empty;
+    private BarcodeKind _newBarcodeKind = BarcodeKind.Unit;
+    private int _newBarcodePackSize = 1;
+    private string? _barcodeFlash;
+    private bool _scanIntoNewBarcode;
+
     private IEnumerable<Product> VisibleProducts
         => _search.Length == 0
             ? _products
@@ -200,19 +251,83 @@
         _expiryAlerts = await Inventory.GetExpiryAlertsAsync();
     }
 
-    private void NewProduct() => _editing = new Product();
-
-    private void Edit(Product product) => _editing = new Product
+    private void NewProduct()
     {
-        Id = product.Id,
-        Name = product.Name,
-        Barcode = product.Barcode,
-        SellPrice = product.SellPrice,
-        WeightedAverageCost = product.WeightedAverageCost,
-        CachedQuantity = product.CachedQuantity,
-        LowStockThreshold = product.LowStockThreshold,
-        IsActive = product.IsActive,
-        CreatedAtUtc = product.CreatedAtUtc
+        _editing = new Product();
+        _editingIsNew = true;
+        _editingBarcodes = [];
+        ResetNewBarcode();
+    }
+
+    private async Task EditAsync(Product product)
+    {
+        _editing = new Product
+        {
+            Id = product.Id,
+            Name = product.Name,
+            Barcode = product.Barcode,
+            SellPrice = product.SellPrice,
+            WeightedAverageCost = product.WeightedAverageCost,
+            CachedQuantity = product.CachedQuantity,
+            LowStockThreshold = product.LowStockThreshold,
+            IsActive = product.IsActive,
+            CreatedAtUtc = product.CreatedAtUtc
+        };
+        _editingIsNew = false;
+        _editingBarcodes = (await Inventory.GetBarcodesAsync(product.Id)).ToList();
+        ResetNewBarcode();
+    }
+
+    private void ResetNewBarcode()
+    {
+        _newBarcodeCode = string.Empty;
+        _newBarcodeKind = BarcodeKind.Unit;
+        _newBarcodePackSize = 1;
+        _barcodeFlash = null;
+    }
+
+    private async Task AddBarcodeAsync()
+    {
+        if (_editing is null || string.IsNullOrWhiteSpace(_newBarcodeCode))
+        {
+            return;
+        }
+
+        _barcodeFlash = null;
+        decimal packSize = _newBarcodeKind == BarcodeKind.Pack ? _newBarcodePackSize : 1m;
+        if (_newBarcodeKind == BarcodeKind.Pack && packSize < 1m)
+        {
+            _barcodeFlash = "Set how many units are in the box.";
+            return;
+        }
+
+        bool added = await Inventory.AddBarcodeAsync(_editing.Id, _newBarcodeCode, _newBarcodeKind, packSize);
+        if (!added)
+        {
+            _barcodeFlash = "That barcode is already used by another product.";
+            return;
+        }
+
+        _editingBarcodes = (await Inventory.GetBarcodesAsync(_editing.Id)).ToList();
+        ResetNewBarcode();
+    }
+
+    private async Task RemoveBarcodeAsync(ProductBarcode barcode)
+    {
+        if (_editing is null)
+        {
+            return;
+        }
+
+        await Inventory.RemoveBarcodeAsync(barcode.Id);
+        _editingBarcodes = (await Inventory.GetBarcodesAsync(_editing.Id)).ToList();
+    }
+
+    private static string BarcodeKindLabel(ProductBarcode barcode) => barcode.Kind switch
+    {
+        BarcodeKind.Pack => $"box of {barcode.UnitsPerScan.ToString("0.###")}",
+        BarcodeKind.PriceEmbedded => "scale label",
+        _ => "single"
     };
 
     private async Task SaveProductAsync()
@@ -302,7 +417,20 @@
     {
         _scanning = false;
         _torchOn = false;
+        _scanIntoNewBarcode = false;
         await Scanner.StopAsync();
+    }
+
+    private async Task ScanIntoPrimaryAsync()
+    {
+        _scanIntoNewBarcode = false;
+        await StartScanAsync();
+    }
+
+    private async Task ScanIntoNewAsync()
+    {
+        _scanIntoNewBarcode = true;
+        await StartScanAsync();
     }
 
     private void OnBarcodeDetected(string barcode)
@@ -315,26 +443,45 @@
                 await Scanner.StopAsync();
             }
 
-            if (_editing is not null)
+            if (_stockAction == StockMovementType.GoodsReceived && _stockProduct is not null)
             {
-                // A product form is open: drop the scanned code straight into the field.
+                // Receiving stock: scanning this product's code adds its scan quantity, so a
+                // case barcode brings in a whole box at once. Other products are ignored.
+                var receiveScan = await Inventory.ScanBarcodeAsync(barcode);
+                if (receiveScan is not null && receiveScan.Product.Id == _stockProduct.Id)
+                {
+                    _stockQty += receiveScan.Quantity;
+                }
+            }
+            else if (_editing is not null && _scanIntoNewBarcode)
+            {
+                // The "add barcode" box asked for the scan: drop it there, not on the primary.
+                _newBarcodeCode = barcode;
+            }
+            else if (_editing is not null)
+            {
+                // A product form is open: drop the scanned code into the primary field.
                 _editing.Barcode = barcode;
             }
             else
             {
                 // Known item -> open it for editing/receiving; unknown -> start a new
                 // product with the barcode already filled so the owner just names it.
-                var product = await Inventory.FindByBarcodeAsync(barcode);
-                if (product is not null)
+                var scan = await Inventory.ScanBarcodeAsync(barcode);
+                if (scan is not null)
                 {
-                    Edit(product);
+                    await EditAsync(scan.Product);
                 }
                 else
                 {
                     _editing = new Product { Barcode = barcode };
+                    _editingIsNew = true;
+                    _editingBarcodes = [];
+                    ResetNewBarcode();
                 }
             }
 
+            _scanIntoNewBarcode = false;
             StateHasChanged();
         });
     }

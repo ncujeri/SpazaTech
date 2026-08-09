@@ -42,6 +42,7 @@ public static class SyncEntityRegistry
             AppendOnly<FeeIncome>(),
             AppendOnly<WalletMovement>(),
             Mutable<Product>(),
+            Mutable<ProductBarcode>(),
             Mutable<Customer>(),
             Mutable<TenantConfig>(),
             Mutable<CashUp>(),

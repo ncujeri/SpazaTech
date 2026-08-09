@@ -3,8 +3,12 @@
 @inject LocalStore Store
 @inject AccessTokenStore Tokens
 @inject SpazaHub.Client.Services.AuthApiClient Auth
+@inject NavigationManager Nav
 
-<span class="sync-chip @_stateClass">@_label</span>
+@if (_label.Length > 0)
+{
+    <button class="sync-chip @_stateClass" @onclick='() => Nav.NavigateTo("/sync")'>@_label</button>
+}
 
 @code {
     private string _label = "";

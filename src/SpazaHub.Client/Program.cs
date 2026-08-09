@@ -43,6 +43,7 @@ builder.Services.AddSingleton<StockTakeService>();
 builder.Services.AddSingleton<CashbackService>();
 builder.Services.AddSingleton<CashUpService>();
 builder.Services.AddSingleton<ReportService>();
+builder.Services.AddSingleton<DemoDataService>();
 
 var host = builder.Build();
 

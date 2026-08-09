@@ -1,0 +1,262 @@
+@page "/reports/movement"
+@using SpazaHub.Client.Services
+@inject AuthApiClient Auth
+@inject ReportService Reports
+@inject SessionService Session
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Product movement</PageTitle>
+
+<div class="report-page">
+    <div class="report-actions no-print">
+        <button class="big-btn small" @onclick='() => Nav.NavigateTo("/report")'>← Back</button>
+        <div class="window-picker">
+            @foreach (var w in _windows)
+            {
+                <button class="chip @(w == _windowDays ? "on" : "")" @onclick="() => SetWindowAsync(w)">@w days</button>
+            }
+        </div>
+        <button class="big-btn primary" @onclick="DownloadPdfAsync">📄 Download PDF</button>
+    </div>
+
+    <div class="print-doc">
+        <div class="doc-head">
+            <div>
+                <h1>Product movement</h1>
+                <p class="doc-sub">What is selling fast and what is dead money</p>
+            </div>
+            <div class="doc-meta">
+                @if (!string.IsNullOrWhiteSpace(_shopName))
+                {
+                    <div class="doc-shop">@_shopName</div>
+                }
+                <div>@DateTime.Now.ToString("dddd, dd MMM yyyy HH:mm")</div>
+                @if (_report is not null)
+                {
+                    <div>Last @_report.WindowDays days</div>
+                }
+            </div>
+        </div>
+
+        @if (_report is null)
+        {
+            <p class="page-hint">Loading…</p>
+        }
+        else if (_report.Lines.Count == 0)
+        {
+            <p class="page-hint">No products yet.</p>
+        }
+        else
+        {
+            <div class="doc-totals">
+                <div class="doc-total">
+                    <span class="doc-total-label">Fast movers</span>
+                    <span class="doc-total-value">@_report.FastCount</span>
+                </div>
+                <div class="doc-total">
+                    <span class="doc-total-label">Slow movers</span>
+                    <span class="doc-total-value">@_report.SlowCount</span>
+                </div>
+                <div class="doc-total">
+                    <span class="doc-total-label">Not moving</span>
+                    <span class="doc-total-value">@_report.NotMovingCount</span>
+                </div>
+                <div class="doc-total">
+                    <span class="doc-total-label">Dead money</span>
+                    <span class="doc-total-value">R @_report.DeadStockValueAtCost.ToString("0.00")</span>
+                </div>
+            </div>
+
+            @if (_movers.Count > 0)
+            {
+                <h2 class="doc-section">Top sellers</h2>
+                <p class="doc-note">Bar length is units sold, relative to your best seller over the last @_report.WindowDays days.</p>
+                <div class="bar-chart">
+                    @foreach (var line in _movers)
+                    {
+                        <div class="bar-row">
+                            <div class="bar-label" title="@line.ProductName">@line.ProductName</div>
+                            <div class="bar-track">
+                                <div class="bar-fill @BandClass(line.Band)"
+                                     style="width: @BarWidth(line.ShareOfTop)"></div>
+                            </div>
+                            <div class="bar-value">@line.UnitsSold.ToString("0.###")</div>
+                        </div>
+                    }
+                </div>
+                <div class="chart-legend">
+                    <span class="key fast">Fast</span>
+                    <span class="key steady">Steady</span>
+                    <span class="key slow">Slow</span>
+                </div>
+            }
+
+            @if (_notMoving.Count > 0)
+            {
+                <h2 class="doc-section">Not moving — dead money on the shelf</h2>
+                <p class="doc-note">Stock that has not sold recently. Mark it down, promote it, or stop buying it.</p>
+                <div class="doc-table-wrap">
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th class="num">On hand</th>
+                            <th class="num">Last sold</th>
+                            <th class="num">Cash stuck</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _notMoving)
+                        {
+                            <tr>
+                                <td>@line.ProductName</td>
+                                <td class="num">@line.OnHand.ToString("0.###")</td>
+                                <td class="num">@LastSoldText(line.DaysSinceLastSale)</td>
+                                <td class="num strong">R @line.OnHandCostValue.ToString("0.00")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>@_notMoving.Count @(_notMoving.Count == 1 ? "item" : "items")</td>
+                            <td class="num"></td>
+                            <td class="num"></td>
+                            <td class="num strong">R @_report.DeadStockValueAtCost.ToString("0.00")</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
+            }
+
+            <h2 class="doc-section">All products</h2>
+            <div class="doc-table-wrap">
+            <table class="doc-table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th class="num">Sold</th>
+                        <th class="num">Per day</th>
+                        <th class="num">On hand</th>
+                        <th class="num">Days cover</th>
+                        <th>Movement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _report.Lines)
+                    {
+                        <tr>
+                            <td>@line.ProductName</td>
+                            <td class="num">@line.UnitsSold.ToString("0.###")</td>
+                            <td class="num">@line.UnitsPerDay.ToString("0.##")</td>
+                            <td class="num">@line.OnHand.ToString("0.###")</td>
+                            <td class="num">@CoverText(line.DaysCover)</td>
+                            <td><span class="band-tag @BandClass(line.Band)">@BandLabel(line.Band)</span></td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td>@_report.Lines.Count @(_report.Lines.Count == 1 ? "item" : "items")</td>
+                        <td class="num strong">@_report.TotalUnitsSold.ToString("0.###")</td>
+                        <td class="num"></td>
+                        <td class="num"></td>
+                        <td class="num"></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+            </div>
+
+            <p class="doc-foot">Sold and per-day cover the last @_report.WindowDays days. Days cover is on-hand ÷ daily rate — how long today's shelf lasts at the current pace.</p>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly int[] _windows = { 7, 14, 30, 90 };
+    private int _windowDays = 30;
+    private ProductMovementReport? _report;
+    private string _shopName = string.Empty;
+    private List<ProductMovementLine> _movers = new();
+    private List<ProductMovementLine> _notMoving = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        if (!Session.IsOwner)
+        {
+            Nav.NavigateTo("/pos");
+            return;
+        }
+
+        _shopName = await Reports.GetShopNameAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _report = await Reports.GetProductMovementAsync(_windowDays);
+        _movers = _report.Lines
+            .Where(l => l.Band != MovementBand.NotMoving)
+            .Take(15)
+            .ToList();
+        _notMoving = _report.Lines
+            .Where(l => l.Band == MovementBand.NotMoving && l.OnHand > 0m)
+            .ToList();
+    }
+
+    private async Task SetWindowAsync(int days)
+    {
+        if (days == _windowDays) return;
+        _windowDays = days;
+        _report = null;
+        await LoadAsync();
+    }
+
+    private async Task DownloadPdfAsync() => await JS.InvokeVoidAsync("print");
+
+    private static string BarWidth(double share)
+    {
+        var pct = Math.Max(3d, Math.Round(share * 100d, 1)); // keep a sliver visible
+        return pct.ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string BandClass(MovementBand band) => band switch
+    {
+        MovementBand.Fast => "fast",
+        MovementBand.Steady => "steady",
+        MovementBand.Slow => "slow",
+        _ => "dead",
+    };
+
+    private static string BandLabel(MovementBand band) => band switch
+    {
+        MovementBand.Fast => "Fast",
+        MovementBand.Steady => "Steady",
+        MovementBand.Slow => "Slow",
+        _ => "Not moving",
+    };
+
+    private static string CoverText(double? days)
+    {
+        if (days is null) return "—";
+        if (days.Value >= 999) return "999+";
+        return days.Value.ToString("0");
+    }
+
+    private static string LastSoldText(int? daysSince)
+    {
+        if (daysSince is null) return "never";
+        if (daysSince.Value <= 0) return "today";
+        if (daysSince.Value == 1) return "1 day";
+        return daysSince.Value + " days";
+    }
+}

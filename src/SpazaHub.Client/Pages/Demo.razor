@@ -1,0 +1,100 @@
+@page "/demo"
+@using SpazaHub.Client.Services
+@inject AuthApiClient Auth
+@inject SessionService Session
+@inject DemoDataService DemoData
+@inject NavigationManager Nav
+
+<PageTitle>Demo data</PageTitle>
+
+<div class="report-page">
+    <div class="report-header">
+        <h1>Demo data</h1>
+        <button class="big-btn small" @onclick='() => Nav.NavigateTo("/report")'>← Back</button>
+    </div>
+
+    <p class="page-hint">
+        Loads a sample spaza catalog with about six weeks of sales so you can try the
+        reports on this device. It stays local and never syncs to the server.
+    </p>
+
+    <div class="report-block">
+        <div class="quote-row"><span>Products in local database</span><span>@_count</span></div>
+    </div>
+
+    <div class="report-links">
+        <button class="big-btn primary" @onclick="LoadAsync" disabled="@_busy">Load demo data</button>
+        <button class="big-btn small" @onclick="ClearAsync" disabled="@_busy">Clear local data</button>
+    </div>
+
+    @if (_confirmingClear)
+    {
+        <div class="report-block">
+            <p>This deletes every product and stock movement on this device. Sure?</p>
+            <div class="report-links">
+                <button class="big-btn danger" @onclick="ConfirmClearAsync" disabled="@_busy">Yes, clear it</button>
+                <button class="big-btn small" @onclick="() => _confirmingClear = false" disabled="@_busy">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <p class="page-hint">@_message</p>
+    }
+
+    @if (_count > 0)
+    {
+        <div class="report-links">
+            <button class="big-btn small" @onclick='() => Nav.NavigateTo("/reports/movement")'>📈 Movement</button>
+            <button class="big-btn small" @onclick='() => Nav.NavigateTo("/reports/stock-value")'>📄 Stock value</button>
+            <button class="big-btn small" @onclick='() => Nav.NavigateTo("/reports/order-list")'>📄 Order list</button>
+        </div>
+    }
+</div>
+
+@code {
+    private int _count;
+    private bool _busy;
+    private bool _confirmingClear;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        if (!Auth.IsSetUp)
+        {
+            Nav.NavigateTo("/setup");
+            return;
+        }
+
+        await Session.RestoreAsync();
+        if (!Session.IsOwner)
+        {
+            Nav.NavigateTo("/pos");
+            return;
+        }
+
+        _count = await DemoData.ProductCountAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _message = null;
+        _message = await DemoData.SeedAsync();
+        _count = await DemoData.ProductCountAsync();
+        _busy = false;
+    }
+
+    private void ClearAsync() => _confirmingClear = true;
+
+    private async Task ConfirmClearAsync()
+    {
+        _busy = true;
+        _confirmingClear = false;
+        _message = await DemoData.ClearAsync();
+        _count = await DemoData.ProductCountAsync();
+        _busy = false;
+    }
+}

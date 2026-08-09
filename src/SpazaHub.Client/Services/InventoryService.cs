@@ -35,11 +35,139 @@ public class InventoryService
         return await query.OrderBy(p => p.Name).ToListAsync();
     }
 
-    public async Task<Product?> FindByBarcodeAsync(string barcode)
+    /// <summary>
+    /// The product a scanned barcode resolves to, plus how many units the scan represents
+    /// (a case code moves several) and, for a scale-printed label, the price read out of the
+    /// barcode itself.
+    /// </summary>
+    public sealed record BarcodeScan(Product Product, decimal Quantity, decimal? UnitPriceOverride);
+
+    /// <summary>
+    /// Resolves a scanned code to a product. Checks the barcode alias table first (unit,
+    /// pack, and price-embedded codes), then falls back to the product's own primary barcode
+    /// so shops set up before aliases existed keep working. Returns null for an unknown code.
+    /// </summary>
+    public async Task<BarcodeScan?> ScanBarcodeAsync(string barcode)
+    {
+        if (string.IsNullOrWhiteSpace(barcode))
+        {
+            return null;
+        }
+
+        await using var db = await _contextFactory.CreateDbContextAsync();
+
+        // 1) Exact alias match: a unit code (qty 1) or a case code (qty = pack size).
+        var alias = await db.ProductBarcodes.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Code == barcode && b.IsActive);
+        if (alias is not null)
+        {
+            var product = await ActiveProductAsync(db, alias.ProductId);
+            if (product is not null)
+            {
+                decimal quantity = alias.Kind == BarcodeKind.Pack && alias.UnitsPerScan > 0m
+                    ? alias.UnitsPerScan
+                    : 1m;
+                return new BarcodeScan(product, quantity, null);
+            }
+        }
+
+        // 2) Scale-printed variable-measure label: match the constant item-reference prefix
+        // and take the price from the barcode. Longest matching prefix wins.
+        if (PriceEmbeddedBarcode.TryReadPrice(barcode, out decimal priceRands))
+        {
+            var priceEmbedded = await db.ProductBarcodes.AsNoTracking()
+                .Where(b => b.Kind == BarcodeKind.PriceEmbedded && b.IsActive)
+                .ToListAsync();
+            var match = priceEmbedded
+                .Where(b => barcode.StartsWith(b.Code, StringComparison.Ordinal))
+                .OrderByDescending(b => b.Code.Length)
+                .FirstOrDefault();
+            if (match is not null)
+            {
+                var product = await ActiveProductAsync(db, match.ProductId);
+                if (product is not null)
+                {
+                    return new BarcodeScan(product, 1m, priceRands);
+                }
+            }
+        }
+
+        // 3) Legacy primary barcode carried on the product row itself.
+        var legacy = await db.Products.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Barcode == barcode && p.IsActive);
+        return legacy is null ? null : new BarcodeScan(legacy, 1m, null);
+    }
+
+    private static async Task<Product?> ActiveProductAsync(ClientDbContext db, Guid productId)
+        => await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId && p.IsActive);
+
+    /// <summary>Active barcode aliases for a product, oldest first.</summary>
+    public async Task<IReadOnlyList<ProductBarcode>> GetBarcodesAsync(Guid productId)
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
-        return await db.Products.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Barcode == barcode && p.IsActive);
+        return await db.ProductBarcodes.AsNoTracking()
+            .Where(b => b.ProductId == productId && b.IsActive)
+            .OrderBy(b => b.CreatedAtUtc)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Adds a barcode alias to a product. For a price-embedded label only the constant
+    /// item-reference portion is stored. Returns false without saving if the code already
+    /// maps to another active product (a barcode identifies one item).
+    /// </summary>
+    public async Task<bool> AddBarcodeAsync(
+        Guid productId, string code, BarcodeKind kind, decimal unitsPerScan = 1m)
+    {
+        string stored = kind == BarcodeKind.PriceEmbedded
+            ? PriceEmbeddedBarcode.ItemReferenceOf(code) ?? code.Trim()
+            : code.Trim();
+        if (stored.Length == 0)
+        {
+            return false;
+        }
+
+        await using (var db = await _contextFactory.CreateDbContextAsync())
+        {
+            bool clash = await db.ProductBarcodes.AsNoTracking()
+                .AnyAsync(b => b.Code == stored && b.IsActive && b.ProductId != productId);
+            if (clash)
+            {
+                return false;
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        await _store.SaveLocalWriteAsync(new ProductBarcode
+        {
+            ProductId = productId,
+            Code = stored,
+            Kind = kind,
+            UnitsPerScan = kind == BarcodeKind.Pack ? unitsPerScan : 1m,
+            IsActive = true,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        return true;
+    }
+
+    /// <summary>Soft-deletes a barcode alias so the removal syncs to other devices.</summary>
+    public async Task RemoveBarcodeAsync(Guid barcodeId)
+    {
+        ProductBarcode? barcode;
+        await using (var db = await _contextFactory.CreateDbContextAsync())
+        {
+            barcode = await db.ProductBarcodes.AsNoTracking().FirstOrDefaultAsync(b => b.Id == barcodeId);
+        }
+
+        if (barcode is null || !barcode.IsActive)
+        {
+            return;
+        }
+
+        barcode.IsActive = false;
+        barcode.UpdatedAtUtc = DateTime.UtcNow;
+        await _store.SaveLocalWriteAsync(barcode);
     }
 
     /// <summary>Creates or updates a product. Prices and thresholds are LWW reference data.</summary>

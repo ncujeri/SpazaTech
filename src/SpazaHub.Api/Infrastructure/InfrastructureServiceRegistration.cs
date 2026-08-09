@@ -55,7 +55,18 @@ public static class InfrastructureServiceRegistration
                 options.UseSqlServer(
                     configuration.GetConnectionString("SqlServer")
                     ?? throw new InvalidOperationException(
-                        "ConnectionStrings:SqlServer is not configured. Use user-secrets locally or Key Vault in production."));
+                        "ConnectionStrings:SqlServer is not configured. Use user-secrets locally or Key Vault in production."),
+                    sql =>
+                    {
+                        // The server database is typically remote, reached over unreliable mobile
+                        // links. Retry transient connection drops instead of failing the request,
+                        // and give slow remote commands (including migrations) room to finish.
+                        sql.EnableRetryOnFailure(
+                            maxRetryCount: 5,
+                            maxRetryDelay: TimeSpan.FromSeconds(10),
+                            errorNumbersToAdd: null);
+                        sql.CommandTimeout(180);
+                    });
             }
         });
 
@@ -73,6 +84,8 @@ public static class InfrastructureServiceRegistration
 
         if (string.Equals(configuration["Messaging:Provider"], "SmsFlow", StringComparison.OrdinalIgnoreCase))
         {
+            // One cached bearer token is shared across the scoped send providers.
+            services.AddSingleton<SmsFlowTokenCache>();
             services.AddHttpClient<IMessagingProvider, SmsFlowProvider>()
                 .AddPolicyHandler(HttpPolicyExtensions
                     .HandleTransientHttpError()

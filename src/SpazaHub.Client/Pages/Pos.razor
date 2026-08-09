@@ -299,23 +299,29 @@ else
         _allProducts = await Inventory.GetProductsAsync();
     }
 
-    private void AddProduct(Product product)
+    private void AddProduct(Product product, decimal quantity = 1m, decimal? unitPriceOverride = null)
     {
-        var line = _cart.FirstOrDefault(l => l.ProductId == product.Id);
+        decimal unitPrice = unitPriceOverride ?? product.SellPrice;
+
+        // A scale-printed label prices that one item, so it always starts a fresh line
+        // rather than merging into an existing one at a different price.
+        var line = unitPriceOverride is null
+            ? _cart.FirstOrDefault(l => l.ProductId == product.Id && l.UnitPrice == unitPrice)
+            : null;
         if (line is null)
         {
             _cart.Add(new UiCartLine
             {
                 ProductId = product.Id,
                 Description = product.Name,
-                Quantity = 1m,
-                UnitPrice = product.SellPrice,
+                Quantity = quantity,
+                UnitPrice = unitPrice,
                 UnitCost = product.WeightedAverageCost
             });
         }
         else
         {
-            line.Quantity += 1m;
+            line.Quantity += quantity;
         }
     }
 
@@ -477,11 +483,13 @@ else
         _ = InvokeAsync(async () =>
         {
             _scanning = false;
-            var product = await Inventory.FindByBarcodeAsync(barcode);
-            if (product is not null)
+            var scan = await Inventory.ScanBarcodeAsync(barcode);
+            if (scan is not null)
             {
-                AddProduct(product);
-                _flash = null;
+                AddProduct(scan.Product, scan.Quantity, scan.UnitPriceOverride);
+                _flash = scan.Quantity > 1m
+                    ? $"Added {scan.Quantity.ToString("0.###")} × {scan.Product.Name}"
+                    : null;
             }
             else
             {

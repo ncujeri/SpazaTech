@@ -11,6 +11,7 @@
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
     <PackageReference Include="MediatR" Version="12.4.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.28" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.28" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
@@ -27,6 +28,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SpazaHub.Shared\SpazaHub.Shared.csproj" />
+    <!-- The API hosts the Blazor WebAssembly client so the app and its /api endpoints
+         share one origin (the client's ApiBaseUrl defaults to same origin). -->
+    <ProjectReference Include="..\SpazaHub.Client\SpazaHub.Client.csproj" />
   </ItemGroup>
 
 </Project>

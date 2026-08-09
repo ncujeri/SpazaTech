@@ -120,6 +120,16 @@ public class AuthApiClient
         DeviceId ??= stored.DeviceId;
         RefreshToken = stored.RefreshToken;
 
+        // The session (localStorage) and the local database (OPFS) live in separate browser
+        // stores that can be cleared independently. If the database was wiped while the session
+        // survived, there is no SyncState row and the first local write would crash with
+        // "Sequence contains no elements". Recreate it from the persisted identity so trading
+        // resumes without a new sign-in.
+        if (state is null)
+        {
+            await _store.InitializeAsync(stored.TenantId, stored.DeviceId, stored.ShopName);
+        }
+
         if (RefreshToken is null || _tokens.HasToken)
         {
             return;

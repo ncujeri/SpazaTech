@@ -75,6 +75,11 @@ if (args.Contains("seed", StringComparer.OrdinalIgnoreCase))
 
 app.UseExceptionHandler();
 
+// Serve the hosted Blazor WebAssembly client: its framework files (_framework/*.wasm)
+// and wwwroot assets. Static file requests short-circuit here, before auth runs.
+app.UseBlazorFrameworkFiles();
+app.UseStaticFiles();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -101,5 +106,9 @@ app.MapAuthEndpoints();
 app.MapCashierEndpoints();
 app.MapSyncEndpoints();
 app.MapWebhookEndpoints();
+
+// Any non-API, non-asset path is a client-side route: return the WASM host page so
+// deep links and reloads land in the app instead of 404ing.
+app.MapFallbackToFile("index.html");
 
 app.Run();
